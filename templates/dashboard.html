@@ -1,0 +1,846 @@
+<!--
+  Pegellotse — Copyright (C) 2026 Niels
+  Freie Software unter der GNU General Public License, Version 3.
+  Ohne jede Gewaehrleistung. Einzelheiten in der Datei LICENSE.
+-->
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pegellotse</title>
+<style>
+  :root{
+    --bg:#0B0E11; --panel:#141A21; --panel-2:#101519; --line:#212A33;
+    --text:#E6ECF2; --muted:#77858F;
+    --ok:#35A06B; --warn:#D2952F; --over:#D9544F; --prognose:#7FB3D5;
+    --pad:clamp(12px,2vw,22px);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:system-ui,"Segoe UI Variable","Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num{font-family:ui-monospace,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+       font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+  .eyebrow{font-size:.68rem; text-transform:uppercase; letter-spacing:.16em;
+           color:var(--muted); font-weight:600}
+  .einheit{font-size:.4em; color:var(--muted); margin-left:.3em; letter-spacing:0}
+
+  header{display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+         justify-content:space-between; padding:var(--pad) var(--pad) 0}
+  header h1{margin:0; font-size:1.05rem; font-weight:600}
+  header .ort{color:var(--muted); font-weight:400}
+  .kopf-rechts{display:flex; align-items:center; gap:12px}
+  #uhr{font-size:1.05rem; color:var(--muted)}
+  .punkt{width:8px; height:8px; border-radius:50%; background:var(--over)}
+  .punkt[data-an=ja]{background:var(--ok)}
+
+  main{display:grid; gap:var(--pad); padding:var(--pad);
+       grid-template-columns:minmax(300px,1fr) minmax(320px,1.2fr); align-items:start}
+  @media (max-width:860px){ main{grid-template-columns:1fr} }
+  .spalte{display:grid; gap:12px}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px;
+         padding:14px 16px}
+
+  /* Jetzt-Anzeige: der Wert, an dem man den Pegel festhaelt */
+  .jetzt{border-left:4px solid var(--line); transition:border-color .3s}
+  .jetzt[data-status=ok]{border-left-color:var(--ok)}
+  .jetzt[data-status=warn]{border-left-color:var(--warn)}
+  .jetzt[data-status=over]{border-left-color:var(--over)}
+  .jetzt .zeile{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+  .jetzt .wert{font-size:clamp(3.2rem,10vw,5rem); line-height:.95; font-weight:500}
+  .jetzt[data-status=warn] .wert{color:var(--warn)}
+  .jetzt[data-status=over] .wert{color:var(--over)}
+  .meter{position:relative; height:34px; margin-top:12px}
+  .meter .bahn{position:absolute; inset:8px 0 14px; background:var(--panel-2);
+               border:1px solid var(--line); border-radius:5px; overflow:hidden}
+  .meter .fuell{height:100%; width:0; background:var(--ok); opacity:.75;
+                transition:width .18s linear, background .3s}
+  .meter[data-status=warn] .fuell{background:var(--warn)}
+  .meter[data-status=over] .fuell{background:var(--over)}
+  .meter .ziel{position:absolute; top:4px; bottom:10px; width:2px; background:var(--text)}
+  .meter .ziel::after{content:"Ziel"; position:absolute; top:-2px; left:5px;
+                      font-size:.62rem; color:var(--muted)}
+  .meter .mittel{position:absolute; top:6px; bottom:12px; width:2px;
+                 background:var(--prognose); transition:left .4s ease}
+  .meter .achse{position:absolute; inset:auto 0 0; display:flex;
+                justify-content:space-between; font-size:.65rem; color:var(--muted)}
+  .halten{color:var(--muted); font-size:.82rem; margin:6px 0 0}
+  .halten b{color:var(--text)}
+
+  .kacheln{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .kachel{background:var(--panel); border:1px solid var(--line); border-radius:10px;
+          padding:12px 14px; border-left:4px solid var(--line); transition:border-color .4s}
+  .kachel[data-status=ok]{border-left-color:var(--ok)}
+  .kachel[data-status=warn]{border-left-color:var(--warn)}
+  .kachel[data-status=over]{border-left-color:var(--over); background:#1E1316}
+  .kachel[data-status=over] .wert{color:var(--over)}
+  .kachel[data-status=warn] .wert{color:var(--warn)}
+  .kachel .kopf{display:flex; justify-content:space-between; align-items:baseline; gap:6px}
+  .kachel .wert{font-size:clamp(1.7rem,4.5vw,2.3rem); line-height:1.05; font-weight:500}
+  .grenze{font-size:.7rem; color:var(--muted)}
+  .fuellung{height:2px; background:var(--line); border-radius:2px; margin-top:7px}
+  .fuellung i{display:block; height:100%; background:var(--muted); width:0}
+
+  .rest .gross{font-size:clamp(2.2rem,6vw,3.2rem); font-weight:500; line-height:1.05}
+  .skala{position:relative; height:44px; margin:14px 0 4px}
+  .skala .bahn{position:absolute; inset:auto 0 18px; height:8px; border-radius:4px;
+    background:linear-gradient(90deg,var(--ok) 0 62%,var(--warn) 62% 84%,var(--over) 84% 100%);
+    opacity:.35}
+  .skala .marke{position:absolute; bottom:12px; width:2px; height:20px;
+                background:var(--prognose); transition:left .5s ease}
+  .skala .marke::after{content:attr(data-label); position:absolute; bottom:22px; left:50%;
+    transform:translateX(-50%); font-size:.7rem; color:var(--prognose); white-space:nowrap}
+  .skala .achse{position:absolute; inset:auto 0 0; display:flex;
+                justify-content:space-between; font-size:.68rem; color:var(--muted)}
+  .satz{color:var(--muted); font-size:.85rem; line-height:1.5; margin:6px 0 0}
+  .satz b{color:var(--text); font-weight:600}
+  #verlauf{width:100%; height:210px; display:block; margin-top:10px}
+  #rta{width:100%; height:190px; display:block; margin-top:10px}
+  .rta-kopf{display:flex; justify-content:space-between; align-items:baseline; gap:10px}
+  button.klein{padding:3px 8px; font-size:.72rem; border-radius:6px; margin-right:8px}
+  .treiber{margin:8px 0 0; font-size:.85rem; color:var(--muted); line-height:1.5}
+  .treiber b{color:var(--text); font-weight:600}
+  .anteile{display:flex; gap:6px; margin-top:10px}
+  .anteile div{flex:1; text-align:center; padding:6px 4px; border-radius:6px;
+               background:var(--panel-2); border:1px solid var(--line)}
+  .anteile span{display:block; font-size:.62rem; text-transform:uppercase;
+                letter-spacing:.12em; color:var(--muted)}
+  .anteile b{font-size:1.05rem; font-weight:500}
+
+  .fuss{display:flex; flex-wrap:wrap; gap:10px; padding:0 var(--pad) var(--pad)}
+  .spitze{flex:1 1 140px; background:var(--panel-2); border:1px solid var(--line);
+          border-radius:10px; padding:10px 14px}
+  .spitze .wert{font-size:1.45rem; font-weight:500}
+
+  button{font:inherit; color:var(--text); background:var(--panel); cursor:pointer;
+         border:1px solid var(--line); border-radius:8px; padding:10px 14px}
+  button:hover{border-color:var(--muted)}
+  button.aktiv{border-color:var(--ok); color:var(--ok)}
+  button:focus-visible, input:focus-visible, select:focus-visible{
+    outline:2px solid var(--prognose); outline-offset:2px}
+  input,select{font:inherit; color:var(--text); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:6px; padding:7px 8px; max-width:100%}
+  input[type=number]{width:5.5rem}
+  label{font-size:.8rem; color:var(--muted); display:grid; gap:4px}
+
+  .meldung{margin:0 var(--pad) var(--pad); padding:10px 14px; border-radius:8px;
+    background:#2A1518; border:1px solid #5A2A2E; color:#F0C3C0; font-size:.85rem}
+  .meldung[hidden]{display:none}
+  .meldung.uhr{background:#241C10; border-color:#5A4526; color:#EBD5AC}
+  .meldung.uhr button{margin-left:10px; padding:5px 10px; font-size:.8rem;
+                      background:transparent; color:inherit; border-color:#5A4526}
+
+  dialog{background:var(--panel); color:var(--text); border:1px solid var(--line);
+         border-radius:12px; padding:0; width:min(560px,94vw)}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  .dlg-kopf{display:flex; justify-content:space-between; align-items:center;
+            padding:16px 18px; border-bottom:1px solid var(--line)}
+  .dlg-kopf h2{margin:0; font-size:1rem}
+  .dlg-inhalt{padding:16px 18px; display:grid; gap:18px; max-height:70vh; overflow:auto}
+  .gruppe{display:grid; gap:8px}
+  .reihe{display:flex; flex-wrap:wrap; gap:10px; align-items:end}
+  .info{font-size:.78rem; color:var(--muted); line-height:1.5}
+  .info.gut{color:var(--ok)}
+  .info.schlecht{color:var(--over)}
+  @media (prefers-reduced-motion:reduce){ *{transition:none !important} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pegellotse <span class="ort" id="ort"></span></h1>
+  <div class="kopf-rechts">
+    <span class="punkt" id="punkt" title="Aufnahme"></span>
+    <span id="geraet" class="grenze"></span>
+    <span id="uhr" class="num">--:--:--</span>
+    <button id="btn-einstellungen">Einstellungen</button>
+  </div>
+</header>
+
+<div class="meldung" id="meldung" hidden></div>
+<div class="meldung uhr" id="uhrhinweis" hidden></div>
+
+<main>
+  <section class="spalte">
+    <div class="panel jetzt" id="jetzt" data-status="ok">
+      <div class="zeile">
+        <span class="eyebrow">Jetzt · L<sub>AF</sub></span>
+        <span class="grenze">Mittel 10 s: <span class="num" id="v10">–</span> dB(A)</span>
+      </div>
+      <div class="wert num" id="vjetzt">–<span class="einheit">dB(A)</span></div>
+      <div class="meter" id="meter">
+        <div class="bahn"><div class="fuell" id="fuell"></div></div>
+        <div class="ziel" id="zielmarke"></div>
+        <div class="mittel" id="mittelmarke" title="Mittel über 10 s"></div>
+        <div class="achse"><span id="m-min">–</span><span id="m-max">–</span></div>
+      </div>
+      <p class="halten" id="halten"></p>
+    </div>
+
+    <div class="kacheln">
+      <div class="kachel" id="k60" data-status="ok">
+        <div class="kopf"><span class="eyebrow">L<sub>Aeq</sub> 1 min</span></div>
+        <div class="wert num" id="v60">–<span class="einheit">dB(A)</span></div>
+        <div class="fuellung"><i id="f60"></i></div>
+      </div>
+      <div class="kachel" id="k300" data-status="ok">
+        <div class="kopf"><span class="eyebrow">L<sub>Aeq</sub> 5 min</span></div>
+        <div class="wert num" id="v300">–<span class="einheit">dB(A)</span></div>
+        <div class="fuellung"><i id="f300"></i></div>
+      </div>
+      <div class="kachel" id="k1800" data-status="ok">
+        <div class="kopf"><span class="eyebrow">L<sub>Aeq</sub> 30 min</span>
+          <span class="grenze" id="g1800"></span></div>
+        <div class="wert num" id="v1800">–<span class="einheit">dB(A)</span></div>
+        <div class="fuellung"><i id="f1800"></i></div>
+      </div>
+      <div class="kachel" id="k3600" data-status="ok">
+        <div class="kopf"><span class="eyebrow">L<sub>Aeq</sub> 60 min</span></div>
+        <div class="wert num" id="v3600">–<span class="einheit">dB(A)</span></div>
+        <div class="fuellung"><i id="f3600"></i></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="spalte">
+    <div class="panel rest">
+      <div class="zeile" style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="eyebrow">Restpegel im laufenden Block</span>
+        <span class="grenze num" id="restzeit">–</span>
+      </div>
+      <div class="gross num" id="headroom">–<span class="einheit">dB(A)</span></div>
+      <div class="skala">
+        <div class="bahn"></div>
+        <div class="marke" id="marke" data-label=""></div>
+        <div class="achse"><span id="skala-min">–</span><span id="skala-max">–</span></div>
+      </div>
+      <p class="satz" id="satz">Warte auf Messwerte …</p>
+    </div>
+
+    <div class="panel">
+      <div class="rta-kopf">
+        <span class="eyebrow">Terzspektrum · A-bewertet</span>
+        <span class="grenze">
+          <button class="klein" id="btn-tempo" title="Zeitbewertung der Anzeige">Fast</button>
+          Summe <span class="num" id="rta-summe">–</span> dB(A)
+        </span>
+      </div>
+      <canvas id="rta" aria-label="Terzspektrum in Echtzeit"></canvas>
+      <div class="anteile">
+        <div><span>Tief · bis 125 Hz</span><b class="num" id="a-tief">–</b></div>
+        <div><span>Mitten · 125–2k</span><b class="num" id="a-mitten">–</b></div>
+        <div><span>Höhen · ab 2k</span><b class="num" id="a-hoehen">–</b></div>
+      </div>
+      <p class="treiber" id="treiber"></p>
+    </div>
+
+    <div class="panel">
+      <span class="eyebrow">Verlauf · 60 Minuten</span>
+      <canvas id="verlauf" aria-label="Pegelverlauf der letzten 60 Minuten"></canvas>
+    </div>
+  </section>
+</main>
+
+<div class="fuss">
+  <div class="spitze">
+    <div class="eyebrow">L<sub>Cpeak</sub> max</div>
+    <div class="wert num" id="peak">–<span class="einheit">dB(C)</span></div>
+  </div>
+  <div class="spitze">
+    <div class="eyebrow">L<sub>AF</sub> max</div>
+    <div class="wert num" id="lafmax">–<span class="einheit">dB(A)</span></div>
+  </div>
+  <button id="btn-log">Protokoll starten</button>
+  <button id="btn-reset">Spitzenwerte zurücksetzen</button>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-kopf">
+    <h2>Einstellungen</h2>
+    <button id="dlg-zu">Schließen</button>
+  </div>
+  <div class="dlg-inhalt">
+
+    <div class="gruppe">
+      <span class="eyebrow">Anzeige auf Tablet oder Handy</span>
+      <p class="info" id="info-adressen">–</p>
+      <p class="info" id="info-system"></p>
+    </div>
+
+    <div class="gruppe" id="gruppe-wlan" hidden>
+      <span class="eyebrow">WLAN</span>
+      <p class="info" id="info-wlanlage">–</p>
+      <div class="reihe">
+        <label style="flex:1 1 160px">Netz
+          <select id="wlan-liste"><option value="">– suchen –</option></select>
+        </label>
+        <label>Kennwort <input id="wlan-pw" type="password" autocomplete="off"></label>
+      </div>
+      <div class="reihe">
+        <label style="flex-direction:row; align-items:center; gap:6px">
+          <input id="wlan-sofort" type="checkbox" style="width:auto">
+          sofort verbinden
+        </label>
+        <button id="btn-wlan-speichern">Hinzufügen</button>
+        <button id="btn-wlan-suchen">Netze suchen</button>
+      </div>
+      <div class="reihe">
+        <button id="btn-hotspot">Zugangspunkt</button>
+        <span class="info" id="info-hotspot"></span>
+      </div>
+      <p class="info" id="info-wlan"></p>
+      <div id="wlan-gespeichert" class="info"></div>
+    </div>
+
+    <div class="gruppe">
+      <span class="eyebrow">Mikrofon</span>
+      <select id="geraeteliste"></select>
+      <div class="reihe">
+        <label>Kanal <input id="kanal" type="number" min="0" max="15" step="1" class="num"></label>
+        <label>Abtastrate
+          <select id="samplerate">
+            <option value="44100">44100 Hz</option>
+            <option value="48000">48000 Hz</option>
+          </select>
+        </label>
+        <button id="btn-geraet">Übernehmen</button>
+        <button id="btn-neuladen">Liste neu laden</button>
+      </div>
+      <p class="info" id="info-geraet"></p>
+    </div>
+
+    <div class="gruppe">
+      <span class="eyebrow">Kalibrierung</span>
+      <div class="reihe">
+        <label>Kalibrator <input id="referenz" type="number" step="0.1" value="94" class="num"></label>
+        <button id="btn-einmessen">Einmessen (5 s)</button>
+      </div>
+      <div class="reihe">
+        <label>Offset von Hand <input id="offset" type="number" step="0.01" class="num"></label>
+        <button id="btn-offset">Setzen</button>
+      </div>
+      <p class="info" id="info-kal"></p>
+    </div>
+
+    <div class="gruppe">
+      <span class="eyebrow">Frequenzgang des Mikrofons</span>
+      <div class="reihe">
+        <input id="calfile" type="file" accept=".txt,.cal,.csv">
+        <button id="btn-calfile">Laden</button>
+        <button id="btn-calfile-weg">Entfernen</button>
+      </div>
+      <p class="info" id="info-calfile">Kalibrierdatei des Mikrofons, z.B. die
+        Datei zur Seriennummer eines UMIK-1. Korrigiert nur den Verlauf, den
+        Absolutpegel bestimmt weiterhin die Kalibrierung oben.</p>
+    </div>
+
+    <div class="gruppe">
+      <span class="eyebrow">Veranstaltung und Grenzwerte</span>
+      <div class="reihe">
+        <label>Veranstaltung <input id="veranstaltung" type="text"></label>
+        <label>Messort <input id="messort" type="text"></label>
+      </div>
+      <div class="reihe">
+        <label>Grenze 30 min <input id="lim30" type="number" step="0.5" class="num"></label>
+        <label>Zielpegel <input id="limziel" type="number" step="0.5" class="num"></label>
+        <label>L<sub>Cpeak</sub> <input id="limpeak" type="number" step="0.5" class="num"></label>
+        <button id="btn-settings">Übernehmen</button>
+      </div>
+      <p class="info" id="info-settings"></p>
+    </div>
+
+  </div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = v => (v === null || v === undefined) ? "–" : v.toFixed(1).replace(".", ",");
+const mmss = s => { s = Math.max(0, Math.round(s));
+  return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0"); };
+
+let limits = {laeq30:99, ziel:95, lcpeak:135};
+let verlauf = [];
+let letzterZustand = null;
+
+function status(v, grenze, ziel){
+  if (v === null || v === undefined) return "ok";
+  if (v >= grenze) return "over";
+  if (v >= ziel) return "warn";
+  return "ok";
+}
+
+function zeichneVerlauf(){
+  const c = $("verlauf"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (!w || !h) return;
+  c.width = w*dpr; c.height = h*dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0,0,w,h);
+
+  const lo = Math.min(limits.ziel-25, 55), hi = Math.max(limits.laeq30+6, 105);
+  const y = v => h - ((v-lo)/(hi-lo))*h;
+  const x = t => w + (t/3600)*w;
+
+  g.font = "10px ui-monospace, monospace";
+  for (let v = Math.ceil(lo/10)*10; v <= hi; v += 10){
+    g.strokeStyle = "#212A33"; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0,y(v)); g.lineTo(w,y(v)); g.stroke();
+    g.fillStyle = "#4E5A63"; g.fillText(v, 2, y(v)-3);
+  }
+  for (const [v,farbe] of [[limits.ziel,"#D2952F"],[limits.laeq30,"#D9544F"]]){
+    g.strokeStyle = farbe; g.setLineDash([5,4]); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0,y(v)); g.lineTo(w,y(v)); g.stroke(); g.setLineDash([]);
+  }
+  if (verlauf.length < 2) return;
+  g.beginPath(); g.moveTo(x(verlauf[0].t), h);
+  verlauf.forEach(p => g.lineTo(x(p.t), y(p.l)));
+  g.lineTo(x(verlauf[verlauf.length-1].t), h); g.closePath();
+  g.fillStyle = "rgba(127,179,213,.10)"; g.fill();
+  g.beginPath();
+  verlauf.forEach((p,i) => i ? g.lineTo(x(p.t),y(p.l)) : g.moveTo(x(p.t),y(p.l)));
+  g.strokeStyle = "#7FB3D5"; g.lineWidth = 1.4; g.stroke();
+}
+
+function zeichne(s){
+  letzterZustand = s;
+  limits = s.limits;
+
+  $("ort").textContent = [s.veranstaltung, s.ort].filter(Boolean).join(" · ");
+  $("uhr").textContent = new Date(s.now*1000).toLocaleTimeString("de-DE");
+  $("punkt").dataset.an = s.laeuft ? "ja" : "nein";
+  $("geraet").textContent = s.laeuft ? s.geraet : "keine Aufnahme";
+
+  const meldungen = [];
+  if (!s.laeuft) meldungen.push("Es läuft keine Aufnahme. " +
+    (s.fehler ? s.fehler + " — " : "") + "Mikrofon unter Einstellungen auswählen.");
+  if (s.clipping) meldungen.push("Eingang übersteuert — die Werte sind zu niedrig. " +
+    "Aufnahmepegel senken und neu einmessen.");
+  if (s.dropped > 20) meldungen.push(s.dropped + " Audioblöcke verloren.");
+  $("meldung").hidden = meldungen.length === 0;
+  $("meldung").textContent = meldungen.join(" ");
+
+  // Jetzt-Anzeige und Meter
+  const laf = s.laf, mittel10 = s.windows["10"] ? s.windows["10"].value : null;
+  const st = status(laf, limits.laeq30, limits.ziel);
+  $("jetzt").dataset.status = st;
+  $("meter").dataset.status = st;
+  $("vjetzt").innerHTML = fmt(laf) + '<span class="einheit">dB(A)</span>';
+  $("v10").textContent = fmt(mittel10);
+
+  const mlo = Math.round(limits.ziel - 25), mhi = Math.round(limits.laeq30 + 3);
+  const pos = v => Math.max(0, Math.min(1, (v-mlo)/(mhi-mlo)))*100;
+  $("m-min").textContent = mlo; $("m-max").textContent = mhi;
+  $("fuell").style.width = (laf === null ? 0 : pos(laf)) + "%";
+  $("zielmarke").style.left = pos(limits.ziel) + "%";
+  $("mittelmarke").style.left = (mittel10 === null ? 0 : pos(mittel10)) + "%";
+  if (mittel10 !== null && mittel10 !== undefined){
+    const d = mittel10 - limits.ziel;
+    $("halten").innerHTML = Math.abs(d) < 0.5
+      ? "Liegt auf dem Zielpegel."
+      : "<b>" + (d>0 ? fmt(d)+" dB über" : fmt(-d)+" dB unter") + "</b> dem Zielpegel von "
+        + fmt(limits.ziel) + " dB(A).";
+  }
+
+  for (const sek of [60,300,1800,3600]){
+    const w = s.windows[sek], v = w ? w.value : null;
+    $("v"+sek).innerHTML = fmt(v) + '<span class="einheit">dB(A)</span>';
+    $("k"+sek).dataset.status = status(v, limits.laeq30, limits.ziel);
+    $("f"+sek).style.width = Math.round((w ? w.filled : 0)*100) + "%";
+  }
+  $("g1800").textContent = "Grenze " + fmt(limits.laeq30);
+
+  $("peak").innerHTML = fmt(s.lcpeak_max) + '<span class="einheit">dB(C)</span>';
+  $("lafmax").innerHTML = fmt(s.laf_max) + '<span class="einheit">dB(A)</span>';
+
+  const b = s.block, head = b.headroom;
+  $("restzeit").textContent = "noch " + mmss(b.remaining);
+  const lo = limits.laeq30-15, hi = limits.laeq30+5;
+  $("skala-min").textContent = fmt(lo); $("skala-max").textContent = fmt(hi);
+  if (b.erschoepft || head === null || head === undefined){
+    $("headroom").textContent = "ausgeschöpft";
+    $("marke").style.left = "0%"; $("marke").dataset.label = "";
+    $("satz").innerHTML = "Der Grenzwert für diesen Block ist erreicht. Bis " +
+      new Date((b.start+b.length)*1000).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}) +
+      " hilft nur noch leiser.";
+  } else {
+    $("headroom").innerHTML = fmt(head) + '<span class="einheit">dB(A)</span>';
+    $("marke").style.left = Math.max(0,Math.min(1,(head-lo)/(hi-lo)))*100 + "%";
+    $("marke").dataset.label = fmt(head);
+    $("satz").innerHTML = "Die nächsten <b>" + mmss(b.remaining) + "</b> dürfen im Mittel <b>"
+      + fmt(head) + " dB(A)</b> haben, damit der 30-Minuten-Block unter " + fmt(limits.laeq30)
+      + " bleibt. Aktuell im Block: <b>" + fmt(b.leq) + " dB(A)</b>.";
+  }
+
+  if (s.spektrum){ spektrum = s.spektrum; zeigeSpektrum(); }
+  if (s.rta_tau !== undefined) setzeTempo(s.rta_tau);
+
+  if (s.adressen){
+    $("info-adressen").innerHTML = s.adressen.length
+      ? "Im selben WLAN erreichbar unter:<br>" + s.adressen
+          .map(a => "<b>http://" + a + ":" + location.port + "</b>").join("<br>") +
+        "<br>Beim ersten Zugriff muss die Windows-Firewall freigegeben sein."
+      : "Keine Netzwerkadresse gefunden — ist der Rechner im WLAN?";
+  }
+
+  const log = s.log;
+  $("btn-log").textContent = log.aktiv
+    ? "Protokoll läuft" + (log.datei ? " · " + log.datei : "") : "Protokoll starten";
+  $("btn-log").classList.toggle("aktiv", log.aktiv);
+
+  const k = s.kalibrierung;
+  if (k.laeuft) $("info-kal").textContent = "Messe … noch " + Math.ceil(k.rest) + " s";
+  else if (k.ergebnis){
+    $("info-kal").textContent = k.ergebnis.text;
+    $("info-kal").className = "info " + (k.ergebnis.ok ? "gut" : "schlecht");
+  } else {
+    $("info-kal").className = "info";
+    $("info-kal").textContent = s.kalibriert_am
+      ? "Offset " + s.calibration_db.toFixed(2).replace(".",",") + " dB, eingemessen am " + s.kalibriert_am
+      : "Noch nicht eingemessen — die angezeigten Pegel sind bis dahin nur Schätzwerte.";
+  }
+  if (s.korrektur){
+    $("info-calfile").className = "info gut";
+    $("info-calfile").textContent = "Geladen: " + s.korrektur.datei + " (" +
+      s.korrektur.punkte + " Punkte, " + s.korrektur.von_hz + "–" + s.korrektur.bis_hz + " Hz)";
+  }
+}
+
+let spektrum = null;
+let tempoTau = 0.125;
+
+function zeichneRta(){
+  const c = $("rta"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (!w || !h) return;
+  c.width = w*dpr; c.height = h*dpr;
+  const g = c.getContext("2d"); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  if (!spektrum || !spektrum.baender.length) return;
+
+  const b = spektrum.baender;
+  const oben = 6, unten = 18;                    // Platz fuer die Achsenbeschriftung
+  const hoch = h - oben - unten;
+  const lauteste = Math.max(...b.map(x => x.l));
+  const hi = Math.ceil((lauteste + 4)/5)*5, lo = hi - 45;   // 45 dB Darstellungsbereich
+  const y = v => oben + hoch - ((v-lo)/(hi-lo))*hoch;
+  const bw = w / b.length;
+
+  g.font = "9px ui-monospace, monospace";
+  for (let v = lo; v <= hi; v += 10){
+    g.strokeStyle = "#1B242C"; g.beginPath();
+    g.moveTo(0, y(v)); g.lineTo(w, y(v)); g.stroke();
+    g.fillStyle = "#4E5A63"; g.fillText(Math.round(v), 2, y(v)-2);
+  }
+
+  b.forEach((band, i) => {
+    const x = i*bw, breite = Math.max(1, bw-2);
+    const hoehe = Math.max(0, y(lo) - y(band.l));
+    // Baender faerben sich nach ihrem Anteil am Gesamtpegel
+    g.fillStyle = band.anteil >= 20 ? "#D2952F" : (band.anteil >= 10 ? "#8FA36B" : "#5E8CA8");
+    g.fillRect(x+1, y(band.l), breite, hoehe);
+    if (band.peak > lo){
+      g.fillStyle = "#E6ECF2";
+      g.fillRect(x+1, y(band.peak), breite, 1.5);
+    }
+  });
+
+  // Achse: nur die Oktavmitten beschriften, sonst wird es unleserlich
+  g.fillStyle = "#77858F"; g.font = "9px system-ui, sans-serif";
+  const marken = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+  b.forEach((band, i) => {
+    const naechste = marken.find(m => Math.abs(band.f - m)/m < 0.06);
+    if (naechste){
+      const text = naechste >= 1000 ? (naechste/1000)+"k" : String(naechste);
+      const breite = g.measureText(text).width;
+      g.fillText(text, i*bw + bw/2 - breite/2, h-5);
+    }
+  });
+}
+
+async function tickSpektrum(){
+  // Eigene Schleife: die Terzanzeige soll fluessig laufen, ohne dass deshalb
+  // der ganze Zustand zehnmal je Sekunde uebertragen werden muss.
+  try {
+    const d = await (await fetch("/api/spektrum")).json();
+    spektrum = d.spektrum;
+    setzeTempo(d.tau);
+    zeigeSpektrum();
+  } catch {}
+}
+
+function setzeTempo(tau){
+  tempoTau = tau;
+  $("btn-tempo").textContent = tau <= 0.2 ? "Fast" : "Slow";
+  $("btn-tempo").classList.toggle("aktiv", tau <= 0.2);
+}
+
+function zeigeSpektrum(){
+  if (!spektrum || !spektrum.baender.length) return;
+  $("rta-summe").textContent = fmt(spektrum.summe);
+  $("a-tief").textContent = Math.round(spektrum.gruppen.tief) + " %";
+  $("a-mitten").textContent = Math.round(spektrum.gruppen.mitten) + " %";
+  $("a-hoehen").textContent = Math.round(spektrum.gruppen.hoehen) + " %";
+  const stark = [...spektrum.baender].sort((a,b) => b.anteil - a.anteil).slice(0,3)
+    .filter(x => x.anteil >= 5);
+  if (stark.length){
+    const namen = stark.map(x => (x.f >= 1000 ? (x.f/1000).toFixed(1).replace(".",",")+" kHz"
+                                              : Math.round(x.f)+" Hz"));
+    const anteil = Math.round(stark.reduce((su,x) => su+x.anteil, 0));
+    $("treiber").innerHTML = "Den Pegel treiben gerade <b>" + namen.join(", ") +
+      "</b> — zusammen <b>" + anteil + " %</b> der Energie. " +
+      (anteil >= 60 ? "Dort einzugreifen bringt am meisten." : "");
+  } else {
+    $("treiber").textContent = "Der Pegel verteilt sich gleichmäßig über das Spektrum.";
+  }
+  zeichneRta();
+}
+
+async function tickSchnell(){
+  try {
+    const s = await (await fetch("/api/state?verlauf=0")).json();
+    zeichne(s);
+  } catch {
+    $("meldung").hidden = false;
+    $("meldung").textContent = "Keine Verbindung zur Messung. Läuft das Programm noch?";
+  }
+}
+async function tickVerlauf(){
+  try {
+    const s = await (await fetch("/api/state")).json();
+    verlauf = s.history; zeichne(s); zeichneVerlauf();
+  } catch {}
+}
+
+async function post(pfad, daten){
+  const r = await fetch(pfad, {method:"POST", headers:{"Content-Type":"application/json"},
+                              body: JSON.stringify(daten||{})});
+  return r.json();
+}
+
+async function ladeGeraete(){
+  const d = await (await fetch("/api/devices")).json();
+  const sel = $("geraeteliste");
+  sel.innerHTML = '<option value="auto">Standardgerät des Systems</option>';
+  d.geraete.forEach(g => {
+    const o = document.createElement("option");
+    o.value = g.index;
+    o.textContent = `${g.name} — ${g.api} (${g.channels} Kan., ${g.samplerate} Hz)`;
+    if (g.index === d.aktiv) o.selected = true;
+    sel.appendChild(o);
+  });
+  if (d.aktiv === null) sel.value = "auto";
+  $("kanal").value = d.kanal;
+  $("samplerate").value = d.samplerate;
+  $("info-geraet").textContent = d.geraete.length
+    ? "" : "Keine Aufnahmegeräte gefunden.";
+}
+
+$("btn-einstellungen").onclick = async () => {
+  await ladeGeraete();
+  ladeSystem();
+  const s = letzterZustand;
+  if (s){
+    $("veranstaltung").value = s.veranstaltung; $("messort").value = s.ort;
+    $("lim30").value = s.limits.laeq30; $("limziel").value = s.limits.ziel;
+    $("limpeak").value = s.limits.lcpeak; $("offset").value = s.calibration_db.toFixed(2);
+  }
+  $("dlg").showModal();
+};
+$("dlg-zu").onclick = () => $("dlg").close();
+$("btn-neuladen").onclick = ladeGeraete;
+
+$("btn-geraet").onclick = async () => {
+  $("info-geraet").textContent = "Starte Aufnahme …";
+  const r = await post("/api/device", {index: $("geraeteliste").value,
+    kanal: $("kanal").value, samplerate: $("samplerate").value});
+  $("info-geraet").className = "info " + (r.ok ? "gut" : "schlecht");
+  $("info-geraet").textContent = r.ok ? "Aufnahme läuft: " + r.geraet
+    : "Gerät nicht nutzbar: " + r.fehler;
+  tickVerlauf();
+};
+
+$("btn-einmessen").onclick = async () => {
+  const r = await post("/api/calibrate", {referenz: $("referenz").value});
+  if (r.fehler){ $("info-kal").className = "info schlecht"; $("info-kal").textContent = r.fehler; }
+};
+$("btn-offset").onclick = async () => {
+  await post("/api/settings", {offset: $("offset").value});
+  $("info-kal").className = "info gut";
+  $("info-kal").textContent = "Offset gesetzt.";
+};
+
+$("btn-calfile").onclick = async () => {
+  const f = $("calfile").files[0];
+  if (!f){ $("info-calfile").className = "info schlecht";
+           $("info-calfile").textContent = "Erst eine Datei auswählen."; return; }
+  const fd = new FormData(); fd.append("datei", f);
+  const r = await (await fetch("/api/calfile", {method:"POST", body: fd})).json();
+  $("info-calfile").className = "info " + (r.fehler ? "schlecht" : "gut");
+  $("info-calfile").textContent = r.fehler ? r.fehler
+    : `Geladen: ${f.name} (${r.info.punkte} Punkte, ${r.info.von_hz}–${r.info.bis_hz} Hz)`;
+};
+$("btn-calfile-weg").onclick = async () => {
+  await post("/api/calfile/entfernen");
+  $("info-calfile").className = "info";
+  $("info-calfile").textContent = "Korrektur entfernt.";
+};
+
+$("btn-settings").onclick = async () => {
+  const r = await post("/api/settings", {
+    veranstaltung: $("veranstaltung").value, ort: $("messort").value,
+    laeq30: $("lim30").value, ziel: $("limziel").value, lcpeak: $("limpeak").value});
+  $("info-settings").className = "info " + (r.fehler ? "schlecht" : "gut");
+  $("info-settings").textContent = r.fehler || "Gespeichert.";
+  tickVerlauf();
+};
+
+$("btn-log").onclick = async () => {
+  const aktiv = !(letzterZustand && letzterZustand.log.aktiv);
+  await post("/api/log", {aktiv});
+  tickSchnell();
+};
+async function ladeSystem(){
+  try {
+    const d = await (await fetch("/api/system")).json();
+    let text = "Rechnername: <b>" + d.rechnername + "</b>";
+    if (d.rechnername && d.linux)
+      text += " — erreichbar auch als <b>http://" + d.rechnername + ".local:" + d.port + "</b>";
+    if (d.temperatur !== null) text += "<br>Temperatur: <b>" + fmt(d.temperatur) + " °C</b>";
+    const dr = d.drosselung;
+    if (dr){
+      const jetzt = [];
+      if (dr.unterspannung) jetzt.push("Unterspannung");
+      if (dr.hitze) jetzt.push("Überhitzung");
+      if (dr.gedrosselt) jetzt.push("Taktdrosselung");
+      const frueher = [];
+      if (dr.unterspannung_gewesen) frueher.push("Unterspannung");
+      if (dr.hitze_gewesen) frueher.push("Überhitzung");
+      if (jetzt.length) text += "<br><b>Jetzt: " + jetzt.join(", ") + "</b> — das kann Aussetzer verursachen.";
+      else if (frueher.length) text += "<br>Seit dem Einschalten aufgetreten: " + frueher.join(", ") + ".";
+    }
+    $("info-system").innerHTML = text;
+    $("gruppe-wlan").hidden = !(d.linux && d.wlan && d.wlan.verfuegbar);
+    const hs = d.hotspot || {};
+    $("btn-hotspot").hidden = !hs.vorhanden;
+    $("btn-hotspot").textContent = hs.aktiv ? "Zugangspunkt beenden" : "Zugangspunkt starten";
+    $("btn-hotspot").classList.toggle("aktiv", !!hs.aktiv);
+    $("info-hotspot").textContent = hs.aktiv
+      ? "Der Rechner macht gerade selbst ein WLAN auf."
+      : (hs.vorhanden ? "Springt von allein an, wenn kein Netz zustande kommt." : "");
+    if (d.wlan && d.wlan.verbunden)
+      $("info-wlanlage").innerHTML = "Verbunden mit <b>" + d.wlan.verbunden + "</b>" +
+        (d.wlan.signal !== null ? " (" + d.wlan.signal + " %)" : "");
+    else if (d.wlan && d.wlan.verfuegbar)
+      $("info-wlanlage").textContent = "Zurzeit mit keinem WLAN verbunden.";
+  } catch {}
+}
+
+async function ladeWlan(){
+  $("info-wlan").textContent = "suche …";
+  try {
+    const d = await (await fetch("/api/wlan")).json();
+    if (d.fehler){ $("info-wlan").textContent = d.fehler; return; }
+    const sel = $("wlan-liste");
+    sel.innerHTML = "";
+    d.gefunden.forEach(n => {
+      const o = document.createElement("option");
+      o.value = n.ssid;
+      o.textContent = n.ssid + (n.signal !== null ? "  (" + n.signal + " %)" : "") +
+                      (n.gesichert ? "" : "  offen");
+      sel.appendChild(o);
+    });
+    if (!d.gefunden.length){
+      const o = document.createElement("option");
+      o.value = ""; o.textContent = "– kein Netz gefunden –";
+      sel.appendChild(o);
+    }
+    $("wlan-gespeichert").innerHTML = d.gespeichert.length
+      ? "Gespeichert: " + d.gespeichert.map(g =>
+          `${g.name} <button class="klein" data-weg="${g.name}">entfernen</button>`).join(" ")
+      : "Noch keine Netze gespeichert.";
+    $("wlan-gespeichert").querySelectorAll("button[data-weg]").forEach(b => {
+      b.onclick = async () => {
+        const r = await post("/api/wlan/entfernen", {name: b.dataset.weg});
+        $("info-wlan").textContent = r.text; ladeWlan();
+      };
+    });
+    $("info-wlan").textContent = "";
+  } catch { $("info-wlan").textContent = "Netzsuche fehlgeschlagen."; }
+}
+
+$("btn-wlan-suchen").onclick = ladeWlan;
+$("btn-hotspot").onclick = async () => {
+  const an = $("btn-hotspot").textContent.includes("starten");
+  $("info-hotspot").textContent = "…";
+  if (an && !confirm("Der Rechner verlässt dafür das aktuelle Netz. Diese Seite "
+                     + "verliert die Verbindung; danach mit dem WLAN des Rechners "
+                     + "verbinden und http://10.42.0.1:8000 aufrufen.")) {
+    $("info-hotspot").textContent = ""; return;
+  }
+  const r = await post("/api/hotspot", {an});
+  $("info-hotspot").textContent = r.text;
+  ladeSystem();
+};
+$("btn-wlan-speichern").onclick = async () => {
+  const ssid = $("wlan-liste").value;
+  $("info-wlan").textContent = "…";
+  const r = await post("/api/wlan", {ssid, passwort: $("wlan-pw").value,
+                                     sofort: $("wlan-sofort").checked});
+  $("info-wlan").className = "info " + (r.ok ? "gut" : "schlecht");
+  $("info-wlan").textContent = r.text;
+  $("wlan-pw").value = "";
+  if (r.ok) { ladeSystem(); ladeWlan(); }
+};
+
+$("btn-tempo").onclick = async () => {
+  const neu = tempoTau <= 0.2 ? 1.0 : 0.125;   // Fast (125 ms) oder Slow (1 s)
+  setzeTempo(neu);
+  await post("/api/settings", {rta_tau: neu});
+};
+$("btn-reset").onclick = async () => { await post("/api/reset-peaks"); tickSchnell(); };
+window.addEventListener("resize", () => { zeichneVerlauf(); zeichneRta(); });
+
+async function pruefeUhr(){
+  // Der Rechner kann eine falsche Uhr haben (ein Raspberry Pi hat keine
+  // gepufferte Uhr). Das Endgeraet hier weiss die richtige Zeit — also melden.
+  try {
+    const jetzt = Date.now()/1000;
+    const d = await (await fetch("/api/zeit", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({zeit: jetzt})})).json();
+    const ab = Math.abs(d.abweichung);
+    if (ab < 30){ $("uhrhinweis").hidden = true; return; }
+    const dauer = ab > 3600 ? Math.round(ab/3600) + " Stunden"
+                : ab > 90   ? Math.round(ab/60) + " Minuten"
+                            : Math.round(ab) + " Sekunden";
+    let text = "Die Uhr dieses Rechners geht um rund " + dauer +
+      (d.abweichung > 0 ? " nach" : " vor") +
+      ". Zeitstempel im Protokoll und die halbstündigen Blöcke stimmen dann nicht.";
+    $("uhrhinweis").hidden = false;
+    $("uhrhinweis").innerHTML = text;
+    if (d.stellbar && !d.misst){
+      const b = document.createElement("button");
+      b.textContent = "Uhrzeit von diesem Gerät übernehmen";
+      b.onclick = async () => {
+        b.disabled = true;
+        const r = await post("/api/zeit/stellen", {zeit: Date.now()/1000});
+        $("uhrhinweis").textContent = r.text || r.fehler || "";
+        setTimeout(pruefeUhr, 1500);
+      };
+      $("uhrhinweis").appendChild(b);
+    } else if (d.misst){
+      $("uhrhinweis").innerHTML += " Zum Stellen erst das Protokoll anhalten.";
+    }
+  } catch {}
+}
+
+tickVerlauf();
+pruefeUhr();
+setInterval(pruefeUhr, 60000);
+setInterval(tickSpektrum, 100);
+setInterval(tickSchnell, 300);
+setInterval(tickVerlauf, 5000);
+</script>
+</body>
+</html>

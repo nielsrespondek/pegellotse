@@ -1,0 +1,10 @@
+# Zeilenenden festnageln. Ohne das macht Git unter Windows aus den
+# Shell-Skripten CRLF-Dateien, und der Raspberry Pi antwortet dann mit
+# "bash: install.sh: /usr/bin/env: ^M: Datei nicht gefunden".
+* text=auto eol=lf
+*.bat text eol=crlf
+*.py text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.html text eol=lf

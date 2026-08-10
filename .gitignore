@@ -1,0 +1,26 @@
+# Erzeugnisse — werden neu gebaut, gehoeren nicht ins Repo
+paket/
+dist/
+build/
+*.zip
+
+# Laufzeitdaten — geraetespezifisch und teils vertraulich
+config.json
+logs/
+mikrofon-kalibrierung.txt
+fehler.txt
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+
+# Editoren und Betriebssysteme
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
