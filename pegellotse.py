@@ -116,10 +116,24 @@ def save_config(cfg: dict) -> None:
 # --------------------------------------------------------------------------
 # Audio
 # --------------------------------------------------------------------------
-def input_devices() -> list[dict]:
-    """Alle Aufnahmegeraete mit Index, Name und Schnittstelle."""
+def input_devices(neu_einlesen: bool = False) -> list[dict]:
+    """
+    Alle Aufnahmegeraete mit Index, Name und Schnittstelle.
+
+    PortAudio liest die Geraeteliste beim Start einmal ein. Ein Mikrofon, das
+    erst danach eingesteckt wird, taucht ohne neues Einlesen nicht auf — das
+    ist der Grund, warum sonst nur ein Neustart hilft. Neu eingelesen wird nur,
+    wenn gerade keine Aufnahme laeuft: das Zuruecksetzen wuerde einen offenen
+    Datenstrom abreissen.
+    """
     try:
         import sounddevice as sd
+        if neu_einlesen:
+            try:
+                sd._terminate()
+                sd._initialize()
+            except Exception as exc:
+                print(f"Geraeteliste nicht neu einlesbar: {exc}")
         apis = sd.query_hostapis()
         out = []
         for i, dev in enumerate(sd.query_devices()):
@@ -737,8 +751,9 @@ def build_app(monitor: Monitor) -> Flask:
 
     @app.get("/api/devices")
     def devices():
+        # Nur neu einlesen, wenn keine Aufnahme laeuft — sonst risse sie ab
         return jsonify({
-            "geraete": input_devices(),
+            "geraete": input_devices(neu_einlesen=monitor.stream is None),
             "aktiv": monitor.cfg["device"],
             "kanal": monitor.cfg["channel"],
             "samplerate": monitor.cfg["samplerate"],

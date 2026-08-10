@@ -307,7 +307,7 @@
           </select>
         </label>
         <button id="btn-geraet">Übernehmen</button>
-        <button id="btn-neuladen">Liste neu laden</button>
+        <button id="btn-neuladen">Geräte neu suchen</button>
       </div>
       <p class="info" id="info-geraet"></p>
     </div>
@@ -633,7 +633,8 @@ async function ladeGeraete(){
   $("kanal").value = d.kanal;
   $("samplerate").value = d.samplerate;
   $("info-geraet").textContent = d.geraete.length
-    ? "" : "Keine Aufnahmegeräte gefunden.";
+    ? "" : "Keine Aufnahmegeräte gefunden. Mikrofon eingesteckt? Dann "
+         + "„Geräte neu suchen“ drücken.";
 }
 
 $("btn-einstellungen").onclick = async () => {

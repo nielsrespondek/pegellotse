@@ -115,6 +115,8 @@ Konfiguration und Protokolle liegen in `/var/lib/pegellotse`.
 ## Erste Schritte
 
 **Mikrofon wählen.** Einstellungen → Mikrofon listet alle Aufnahmegeräte auf.
+Wird ein Mikrofon erst nach dem Start eingesteckt, taucht es dort erst nach
+einem Druck auf *Geräte neu suchen* auf.
 Unter Windows vorher alle Mikrofoneffekte abschalten, Format auf 48000 Hz
 stellen und den Aufnahmepegel auf einen festen Wert setzen — jede spätere
 Änderung macht die Kalibrierung ungültig.
