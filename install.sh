@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Pegellotse — Schallpegel-Monitoring fuer Veranstaltungen
-# Copyright (C) 2026 nielsrespondek
+# Copyright (C) 2026 Niels Respondek
 #
 # Dieses Programm ist freie Software: Sie koennen es weitergeben und/oder
 # veraendern unter den Bedingungen der GNU General Public License, Version 3,
