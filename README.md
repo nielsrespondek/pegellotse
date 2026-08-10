@@ -71,8 +71,7 @@ Rechner aus:
 
 ```bash
 ssh benutzer@pegellotse.local
-curl -fsSL https://raw.githubusercontent.com/DEINNAME/pegellotse/main/install.sh \
-  | sudo REPO=DEINNAME/pegellotse bash
+curl -fsSL https://raw.githubusercontent.com/nielsrespondek/pegellotse/main/install.sh | sudo bash
 ```
 
 Das Skript installiert die Pakete, richtet eine Python-Umgebung ein, prüft die
@@ -84,6 +83,7 @@ Einstellbar über Umgebungsvariablen:
 
 | Variable | Bedeutung |
 |---|---|
+| `REPO` | andere Quelle auf GitHub, etwa ein Fork |
 | `PORT` | Port des Dashboards, Standard 8000 |
 | `HOSTNAME_NEU` | Rechnernamen setzen |
 | `HOTSPOT=0` | Notfall-Zugangspunkt nicht einrichten |

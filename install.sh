@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Pegellotse — Schallpegel-Monitoring fuer Veranstaltungen
-# Copyright (C) 2026 Niels Respondek
+# Copyright (C) 2026 Niels
 #
 # Dieses Programm ist freie Software: Sie koennen es weitergeben und/oder
 # veraendern unter den Bedingungen der GNU General Public License, Version 3,
@@ -15,13 +15,13 @@
 # install.sh — richtet das Pegellotse auf einem Raspberry Pi ein.
 #
 # Aus dem Netz:
-#     curl -fsSL https://raw.githubusercontent.com/DEINNAME/pegellotse/main/install.sh | sudo bash
+#     curl -fsSL https://raw.githubusercontent.com/nielsrespondek/pegellotse/main/install.sh | sudo bash
 #
 # Aus einem ausgecheckten Ordner (funktioniert auch ohne GitHub):
 #     sudo ./install.sh
 #
 # Einstellbar ueber Umgebungsvariablen:
-#     REPO=benutzer/projekt   Quelle auf GitHub
+#     REPO=benutzer/projekt   andere Quelle auf GitHub (Standard: nielsrespondek/pegellotse)
 #     BRANCH=main             Zweig
 #     PORT=8000               Port des Dashboards
 #     HOSTNAME_NEU=pegellotse Rechnernamen setzen (Aufruf ueber name.local)
@@ -33,7 +33,7 @@
 #
 set -euo pipefail
 
-REPO="${REPO:-DEINNAME/pegellotse}"
+REPO="${REPO:-nielsrespondek/pegellotse}"
 BRANCH="${BRANCH:-main}"
 PORT="${PORT:-8000}"
 ZIEL="${ZIEL:-/opt/pegellotse}"
@@ -68,15 +68,14 @@ if [ -f "$QUELLE/pegellotse.py" ]; then
     cp -r "$QUELLE"/templates "$ZIEL"/
     [ -d "$QUELLE/beispiel" ] && cp -r "$QUELLE"/beispiel "$ZIEL"/ || true
 else
-    [ "$REPO" = "DEINNAME/pegellotse" ] && fehler \
-        "Keine Programmdateien gefunden und REPO ist nicht gesetzt.
-   Entweder das Skript im Projektordner starten oder REPO angeben:
-   curl -fsSL .../install.sh | sudo REPO=benutzer/projekt bash"
     echo "  von GitHub: $REPO ($BRANCH)"
     TMP="$(mktemp -d)"
     curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" \
         | tar xz -C "$TMP" --strip-components=1 \
-        || fehler "Herunterladen fehlgeschlagen. Stimmen REPO und BRANCH?"
+        || fehler "Herunterladen von $REPO ($BRANCH) fehlgeschlagen.
+   Moegliche Gruende: kein Internet, falscher Name, anderer Hauptzweig,
+   oder das Repository ist nicht oeffentlich.
+   Andere Quelle waehlen mit:  sudo REPO=benutzer/projekt BRANCH=main ./install.sh"
     cp -r "$TMP"/pegellotse.py "$TMP"/messkern.py "$TMP"/selftest.py \
           "$TMP"/requirements.txt "$TMP"/LICENSE "$TMP"/templates "$ZIEL"/
     [ -f "$TMP/hotspot.sh" ] && cp "$TMP"/hotspot.sh "$ZIEL"/ || true
