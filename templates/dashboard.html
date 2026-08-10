@@ -479,7 +479,7 @@ function zeichne(s){
   if (s.adressen){
     $("info-adressen").innerHTML = s.adressen.length
       ? "Im selben WLAN erreichbar unter:<br>" + s.adressen
-          .map(a => "<b>http://" + a + ":" + location.port + "</b>").join("<br>") +
+          .map(a => "<b>http://" + a + (location.port ? ":" + location.port : "") + "</b>").join("<br>") +
         "<br>Beim ersten Zugriff muss die Windows-Firewall freigegeben sein."
       : "Keine Netzwerkadresse gefunden — ist der Rechner im WLAN?";
   }
@@ -704,8 +704,9 @@ async function ladeSystem(){
   try {
     const d = await (await fetch("/api/system")).json();
     let text = "Rechnername: <b>" + d.rechnername + "</b>";
+    const anhang = (d.port === 80) ? "" : ":" + d.port;
     if (d.rechnername && d.linux)
-      text += " — erreichbar auch als <b>http://" + d.rechnername + ".local:" + d.port + "</b>";
+      text += " — erreichbar auch als <b>http://" + d.rechnername + ".local" + anhang + "</b>";
     if (d.temperatur !== null) text += "<br>Temperatur: <b>" + fmt(d.temperatur) + " °C</b>";
     const dr = d.drosselung;
     if (dr){

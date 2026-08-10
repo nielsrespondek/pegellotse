@@ -23,7 +23,7 @@
 # Einstellbar ueber Umgebungsvariablen:
 #     REPO=benutzer/projekt   andere Quelle auf GitHub (Standard: nielsrespondek/pegellotse)
 #     BRANCH=main             Zweig
-#     PORT=8000               Port des Dashboards
+#     PORT=80                 Port des Dashboards (80 = ohne Portangabe erreichbar)
 #     HOSTNAME_NEU=pegellotse Rechnernamen setzen (Aufruf ueber name.local)
 #     LUEFTER_GPIO=12         temperaturgesteuerter Luefter an diesem GPIO
 #     LUEFTER_TEMP=55         Einschalttemperatur in Grad (Standard 55)
@@ -35,7 +35,9 @@ set -euo pipefail
 
 REPO="${REPO:-nielsrespondek/pegellotse}"
 BRANCH="${BRANCH:-main}"
-PORT="${PORT:-8000}"
+PORT="${PORT:-80}"
+# Port 80 wird in Adressen nicht mitgeschrieben
+if [ "$PORT" = "80" ]; then ANHANG=""; else ANHANG=":$PORT"; fi
 ZIEL="${ZIEL:-/opt/pegellotse}"
 DATEN="${DATEN:-/var/lib/pegellotse}"
 DIENST="pegellotse"
@@ -127,6 +129,9 @@ Group=$BENUTZER
 SupplementaryGroups=audio
 WorkingDirectory=$ZIEL
 Environment=PEGELLOTSE_DATA=$DATEN
+# Erlaubt das Oeffnen von Port 80, ohne dass der Dienst root-Rechte braucht
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 ExecStart=$ZIEL/venv/bin/python $ZIEL/pegellotse.py --port $PORT --kein-browser
 Restart=always
 RestartSec=5
@@ -181,7 +186,7 @@ EOF
         systemctl daemon-reload
         systemctl enable --now pegellotse-hotspot.timer
         echo "  Kommt kein Netz zustande, macht der Rechner nach etwa 90 s"
-        echo "  selbst ein WLAN auf: $SSID / $PW  -> http://10.42.0.1:$PORT"
+        echo "  selbst ein WLAN auf: $SSID / $PW  -> http://10.42.0.1$ANHANG"
     fi
 fi
 
@@ -220,8 +225,8 @@ sage "Fertig."
 cat <<EOF
 Das Dashboard laeuft und startet ab jetzt beim Einschalten mit.
 
-  http://$NAME.local:$PORT
-$(hostname -I | tr ' ' '\n' | grep -v '^$' | sed "s|^|  http://|; s|$|:$PORT|")
+  http://$NAME.local$ANHANG
+$(hostname -I | tr ' ' '\n' | grep -v '^$' | sed "s|^|  http://|; s|\$|$ANHANG|")
 
 Mikrofon, Kalibrierung und Grenzwerte werden dort eingestellt — der Pi
 braucht weder Bildschirm noch Tastatur.

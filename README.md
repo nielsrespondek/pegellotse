@@ -26,7 +26,8 @@ jemand ein Auge auf die Ohren des Publikums haben sollte.
 - **Protokoll** als CSV, eine Zeile je Sekunde
 
 Die Anzeige läuft im Browser und ist im selben Netz auch vom Tablet oder Handy
-erreichbar. Es geht nichts ins Internet.
+erreichbar — auf dem Raspberry Pi unter `http://pegellotse.local`, unter
+Windows unter `http://localhost:8000`. Es geht nichts ins Internet.
 
 ---
 
@@ -84,13 +85,19 @@ Einstellbar über Umgebungsvariablen:
 | Variable | Bedeutung |
 |---|---|
 | `REPO` | andere Quelle auf GitHub, etwa ein Fork |
-| `PORT` | Port des Dashboards, Standard 8000 |
+| `PORT` | Port des Dashboards, Standard 80 |
 | `HOSTNAME_NEU` | Rechnernamen setzen |
 | `HOTSPOT=0` | Notfall-Zugangspunkt nicht einrichten |
 | `HOTSPOT_SSID`, `HOTSPOT_PW` | Name und Kennwort des Zugangspunkts |
 | `LUEFTER_GPIO`, `LUEFTER_TEMP` | temperaturgesteuerter Lüfter |
 
-**3. Aufrufen.** `http://pegellotse.local:8000`
+**3. Aufrufen.** `http://pegellotse.local`
+
+Der Dienst hört auf Port 80, die Adresse braucht also keine Portangabe. Dafür
+bekommt er von systemd genau eine zusätzliche Fähigkeit
+(`CAP_NET_BIND_SERVICE`) — Ports unter 1024 darf sonst nur root öffnen. Der
+Dienst selbst läuft weiterhin als eigener, unprivilegierter Benutzer. Mit
+`PORT=8000` beim Installieren lässt sich ein anderer Port wählen.
 
 Das klappt von iPhone, iPad, Mac und Windows zuverlässig. Unter Android ist
 die Auflösung von `.local`-Namen wackelig — dort hilft eine im Router fest
@@ -142,7 +149,7 @@ gerade offene Verbindung ab.
 
 **Wenn kein Netz da ist**, macht der Pi nach etwa anderthalb Minuten selbst
 ein WLAN auf (Standard: `Pegellotse` / `pegellotse`, Adresse
-`http://10.42.0.1:8000`). Darüber lässt sich in Ruhe das richtige Netz
+`http://10.42.0.1`). Darüber lässt sich in Ruhe das richtige Netz
 eintragen. Zurück geht es nicht von allein: die WLAN-Chips im Pi können nicht
 gleichzeitig senden und nach fremden Netzen suchen. Also Zugangspunkt im
 Dashboard beenden oder neu starten.

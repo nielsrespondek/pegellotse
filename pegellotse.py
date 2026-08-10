@@ -264,10 +264,11 @@ def hotspot_lage() -> dict:
     return {"vorhanden": vorhanden, "aktiv": aktiv}
 
 
-def hotspot_schalten(an: bool) -> tuple[bool, str]:
+def hotspot_schalten(an: bool, port: int = 80) -> tuple[bool, str]:
     if an:
         ok, ausgabe = _nmcli("connection", "up", "hotspot", mit_sudo=True, timeout=45)
-        return ok, ("Zugangspunkt läuft — erreichbar unter http://10.42.0.1:8000"
+        anhang = "" if port == 80 else f":{port}"
+        return ok, (f"Zugangspunkt läuft — erreichbar unter http://10.42.0.1{anhang}"
                     if ok else ausgabe)
     ok, ausgabe = _nmcli("connection", "down", "hotspot", mit_sudo=True, timeout=45)
     return ok, ("Zugangspunkt beendet. Der Rechner sucht jetzt wieder nach "
@@ -700,7 +701,7 @@ def build_app(monitor: Monitor) -> Flask:
     @app.post("/api/hotspot")
     def hotspot():
         data = request.get_json(force=True, silent=True) or {}
-        ok, text = hotspot_schalten(bool(data.get("an")))
+        ok, text = hotspot_schalten(bool(data.get("an")), monitor.port)
         return jsonify({"ok": ok, "text": text})
 
     @app.post("/api/zeit")
@@ -858,13 +859,14 @@ def main() -> None:
     monitor.port = args.port
     monitor.adressen = lokale_adressen()
     app = build_app(monitor)
-    url = f"http://localhost:{args.port}"
+    anhang = "" if args.port == 80 else f":{args.port}"
+    url = f"http://localhost{anhang}"
     print(f"\n{APP_NAME} {VERSION}")
     print(f"Auf diesem Rechner:  {url}")
     if monitor.adressen:
         print("Im selben WLAN (Tablet, Handy):")
         for adresse in monitor.adressen:
-            print(f"                     http://{adresse}:{args.port}")
+            print(f"                     http://{adresse}{anhang}")
     else:
         print("Im WLAN:             keine Netzwerkadresse gefunden — "
               "ist der Rechner verbunden?")
