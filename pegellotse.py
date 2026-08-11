@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import math
 import os
@@ -37,11 +38,12 @@ import sys
 import threading
 import time
 import traceback
+import zipfile
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 
 from messkern import MicCorrection, SplEngine
 
@@ -368,6 +370,11 @@ class Monitor:
         self.dropped = 0
         self.adressen: list[str] = []
         self.port = 8000
+        self.letzter_block = 0.0       # wann kam zuletzt Audio an
+        self.letztes_signal = 0.0      # wann war zuletzt etwas zu hoeren
+        self.neustarts = 0             # wie oft die Aufnahme wiederbelebt wurde
+        self.wache_meldung = ""
+        self.markierung_offen = ""
 
         self.csv_file = None
         self.csv_writer = None
@@ -385,6 +392,7 @@ class Monitor:
         self.engine = self._new_engine()
         self._stop = threading.Event()
         threading.Thread(target=self._worker, daemon=True).start()
+        threading.Thread(target=self._wache, daemon=True).start()
 
     # -- Messkern ----------------------------------------------------------
     def _new_engine(self) -> SplEngine:
@@ -497,6 +505,7 @@ class Monitor:
         self.csv_writer.writerow([
             "Zeit", "LAF", "LAeq_1s", "LAeq_10s", "LAeq_1min", "LAeq_5min",
             "LAeq_30min", "LAeq_60min", "LCpeak", "Block_LAeq", "Uebersteuert",
+            "Bemerkung",
         ])
         self.csv_name = path.name
         print(f"Protokoll: {path}")
@@ -517,7 +526,9 @@ class Monitor:
             fmt(e.windows[1800].value(cal)), fmt(e.windows[3600].value(cal)),
             fmt(result["lcpeak"]), fmt(e.block.leq(cal)),
             "ja" if e.clipping else "",
+            self.markierung_offen,
         ])
+        self.markierung_offen = ""
         self.csv_file.flush()
 
     # -- Kalibrierung ------------------------------------------------------
@@ -569,8 +580,12 @@ class Monitor:
                 t_end, samples = self.q.get(timeout=0.5)
             except queue.Empty:
                 continue
+            self.letzter_block = time.monotonic()
             with self.lock:
                 result = self.engine.process(samples, t_end=t_end)
+                # Digitale Stille erkennen — unabhaengig von der Kalibrierung
+                if result["rms_raw"] > 1e-5:
+                    self.letztes_signal = self.letzter_block
 
                 if self.cal_active:
                     self._cal_sum += result["rms_raw"] ** 2
@@ -584,6 +599,41 @@ class Monitor:
                         self._write_log(t_end, result)
                 elif self.csv_writer is not None:
                     self._close_log()
+
+    # -- Waechter ----------------------------------------------------------
+    def _wache(self) -> None:
+        """
+        Prueft laufend, ob noch Audio ankommt, und startet die Aufnahme sonst
+        neu. Ohne das bliebe ein herausgerutschtes USB-Kabel bis zum Ende der
+        Veranstaltung unbemerkt, wenn gerade niemand aufs Dashboard schaut.
+        """
+        while not self._stop.wait(5.0):
+            jetzt = time.monotonic()
+            steht = self.stream is None or (self.letzter_block > 0
+                                            and jetzt - self.letzter_block > 5.0)
+            if not steht:
+                if self.wache_meldung:
+                    self.wache_meldung = ""
+                continue
+            self.wache_meldung = ("Es kam kein Ton mehr an — Aufnahme wird neu "
+                                  "gestartet.")
+            print(f"Waechter: keine Audiodaten seit "
+                  f"{jetzt - self.letzter_block:.0f} s, starte Aufnahme neu")
+            if self.start_stream():
+                self.neustarts += 1
+                self.letzter_block = time.monotonic()
+                self.wache_meldung = (f"Aufnahme wurde neu gestartet "
+                                      f"({self.neustarts}. Mal).")
+            else:
+                self.wache_meldung = (f"Aufnahme laesst sich nicht starten: "
+                                      f"{self.fehler}")
+
+    # -- Markierungen ------------------------------------------------------
+    def markieren(self, text: str) -> tuple[bool, str]:
+        if not self.cfg["log_enabled"]:
+            return False, "Es läuft kein Protokoll."
+        self.markierung_offen = text.strip()[:120] or "Markierung"
+        return True, f"Markierung „{self.markierung_offen}“ wird eingetragen."
 
     # -- Zustand fuer die Oberflaeche --------------------------------------
     def state(self, mit_verlauf: bool = True) -> dict:
@@ -601,6 +651,12 @@ class Monitor:
             "ort": self.cfg["ort"],
             "veranstaltung": self.cfg["veranstaltung"],
             "dropped": self.dropped,
+            "wache": {
+                "meldung": self.wache_meldung,
+                "neustarts": self.neustarts,
+                "stille_s": round(jetzt - self.letztes_signal, 1)
+                            if self.letztes_signal else None,
+            },
             "now": self.engine.wanduhr(),
             "laeuft": self.stream is not None,
             "geraet": self.device_label,
@@ -618,6 +674,44 @@ class Monitor:
             "version": VERSION,
         })
         return snap
+
+
+
+# --------------------------------------------------------------------------
+# Protokolle
+# --------------------------------------------------------------------------
+def protokolle() -> list[dict]:
+    """Vorhandene Protokolldateien, neueste zuerst."""
+    if not LOG_DIR.exists():
+        return []
+    eintraege = []
+    for datei in LOG_DIR.glob("*.csv"):
+        try:
+            angaben = datei.stat()
+        except OSError:
+            continue
+        eintraege.append({
+            "name": datei.name,
+            "bytes": angaben.st_size,
+            "geaendert": datetime.fromtimestamp(angaben.st_mtime).strftime("%d.%m.%Y %H:%M"),
+            "zeit": angaben.st_mtime,
+        })
+    eintraege.sort(key=lambda e: -e["zeit"])
+    return eintraege
+
+
+def protokoll_pfad(name: str) -> Path | None:
+    """
+    Wandelt einen Dateinamen in einen Pfad um — und nur, wenn er tatsaechlich
+    im Protokollverzeichnis liegt. Ohne diese Pruefung koennte ueber die
+    Adresszeile jede Datei des Rechners abgerufen werden.
+    """
+    if not name or "/" in name or "\\" in name:
+        return None
+    ziel = (LOG_DIR / name).resolve()
+    if ziel.parent != LOG_DIR.resolve() or ziel.suffix.lower() != ".csv":
+        return None
+    return ziel if ziel.is_file() else None
 
 
 # --------------------------------------------------------------------------
@@ -678,6 +772,60 @@ def build_app(monitor: Monitor) -> Flask:
             laf = monitor.engine.laf
         return jsonify({"spektrum": daten, "laf": laf,
                         "tau": monitor.cfg.get("rta_tau", 0.125)})
+
+    @app.post("/api/markierung")
+    def markierung():
+        data = request.get_json(force=True, silent=True) or {}
+        ok, text = monitor.markieren(str(data.get("text", "")))
+        return jsonify({"ok": ok, "text": text})
+
+    @app.get("/api/logs")
+    def logs():
+        return jsonify({
+            "dateien": protokolle(),
+            "verzeichnis": str(LOG_DIR),
+            "laeuft": monitor.csv_name,
+        })
+
+    @app.get("/logs/<name>")
+    def log_holen(name):
+        ziel = protokoll_pfad(name)
+        if ziel is None:
+            return "Datei nicht gefunden", 404
+        return send_file(ziel, as_attachment=True, download_name=name,
+                         mimetype="text/csv")
+
+    @app.get("/logs.zip")
+    def logs_zip():
+        dateien = protokolle()
+        if not dateien:
+            return "Keine Protokolle vorhanden", 404
+        puffer = io.BytesIO()
+        with zipfile.ZipFile(puffer, "w", zipfile.ZIP_DEFLATED) as archiv:
+            for eintrag in dateien:
+                ziel = protokoll_pfad(eintrag["name"])
+                if ziel is not None:
+                    archiv.write(ziel, eintrag["name"])
+        puffer.seek(0)
+        stempel = datetime.now().strftime("%Y-%m-%d")
+        return send_file(puffer, as_attachment=True, mimetype="application/zip",
+                         download_name=f"pegellotse-protokolle-{stempel}.zip")
+
+    @app.post("/api/logs/loeschen")
+    def log_loeschen():
+        data = request.get_json(force=True, silent=True) or {}
+        name = str(data.get("name", ""))
+        if name and name == monitor.csv_name:
+            return jsonify({"fehler": "Diese Datei wird gerade beschrieben. "
+                                      "Erst das Protokoll anhalten."}), 409
+        ziel = protokoll_pfad(name)
+        if ziel is None:
+            return jsonify({"fehler": "Datei nicht gefunden."}), 404
+        try:
+            ziel.unlink()
+        except OSError as exc:
+            return jsonify({"fehler": str(exc)}), 500
+        return jsonify({"ok": True, "text": f"{name} gelöscht."})
 
     @app.get("/api/system")
     def system():
@@ -807,8 +955,23 @@ def build_app(monitor: Monitor) -> Flask:
     @app.post("/api/log")
     def toggle_log():
         data = request.get_json(force=True, silent=True) or {}
-        monitor.set_logging(bool(data.get("aktiv")))
-        return jsonify({"aktiv": monitor.cfg["log_enabled"]})
+        an = bool(data.get("aktiv"))
+        if an:
+            # Der Name wandert in den Dateinamen. Ohne ihn heissen hinterher
+            # alle Protokolle gleich und niemand weiss mehr, wozu sie gehoeren.
+            name = str(data.get("veranstaltung", "")).strip()[:80]
+            if name:
+                monitor.cfg["veranstaltung"] = name
+                save_config(monitor.cfg)
+            if not monitor.cfg["veranstaltung"].strip():
+                return jsonify({
+                    "fehler": "Bitte zuerst eintragen, um welche Veranstaltung "
+                              "es geht — der Name steht später im Dateinamen.",
+                    "feld": "veranstaltung",
+                }), 400
+        monitor.set_logging(an)
+        return jsonify({"aktiv": monitor.cfg["log_enabled"],
+                        "veranstaltung": monitor.cfg["veranstaltung"]})
 
     @app.post("/api/calibrate")
     def calibrate():

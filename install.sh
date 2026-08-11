@@ -141,7 +141,11 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now "$DIENST"
+systemctl enable "$DIENST"
+# Ausdruecklich neu starten: "enable --now" startet einen bereits laufenden
+# Dienst nicht neu — nach einer erneuten Installation liefe sonst weiter der
+# alte Prozess mit der alten Dienstdatei, etwa auf dem alten Port.
+systemctl restart "$DIENST"
 
 if [ "${HOTSPOT:-1}" = "1" ] && [ -f "$ZIEL/hotspot.sh" ]; then
     SSID="${HOTSPOT_SSID:-Pegellotse}"
@@ -184,7 +188,8 @@ AccuracySec=5
 WantedBy=timers.target
 EOF
         systemctl daemon-reload
-        systemctl enable --now pegellotse-hotspot.timer
+        systemctl enable pegellotse-hotspot.timer
+        systemctl restart pegellotse-hotspot.timer
         echo "  Kommt kein Netz zustande, macht der Rechner nach etwa 90 s"
         echo "  selbst ein WLAN auf: $SSID / $PW  -> http://10.42.0.1$ANHANG"
     fi
@@ -218,6 +223,12 @@ if ! systemctl is-active --quiet "$DIENST"; then
     echo
     systemctl status "$DIENST" --no-pager --lines 20 || true
     fehler "Der Dienst laeuft nicht. Die Ausgabe oben nennt den Grund."
+fi
+
+if command -v ss >/dev/null && ! ss -tln 2>/dev/null | grep -q ":$PORT "; then
+    echo
+    echo "  Hinweis: auf Port $PORT lauscht nichts. Zustand ansehen mit:"
+    echo "    systemctl status $DIENST"
 fi
 
 NAME="$(hostname)"

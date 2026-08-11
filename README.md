@@ -23,7 +23,8 @@ jemand ein Auge auf die Ohren des Publikums haben sollte.
 - **LCpeak** und LAF als Spitzenwerte
 - **Terzspektrum** in Echtzeit, A-bewertet, mit Klartextangabe, welche Bänder
   den Pegel gerade treiben
-- **Protokoll** als CSV, eine Zeile je Sekunde
+- **Protokoll** als CSV, eine Zeile je Sekunde, im Browser herunterladbar, mit
+  Markierungen für wichtige Momente
 
 Die Anzeige läuft im Browser und ist im selben Netz auch vom Tablet oder Handy
 erreichbar — auf dem Raspberry Pi unter `http://pegellotse.local`, unter
@@ -136,11 +137,67 @@ Frequenz und Pegel. Die Kurve wird auf 1 kHz normiert und invertiert als
 linearphasiger FIR-Filter vorgeschaltet: korrigiert wird nur der Verlauf, den
 Absolutpegel bestimmt weiterhin die Kalibrierung.
 
-**Grenzwerte.** Voreingestellt sind die Werte aus DIN 15905-5:
-Beurteilungspegel 99 dB(A) über 30 Minuten, Spitzenpegel 135 dB(C). Der
-Zielpegel ist frei wählbar und bestimmt, ab wann die Anzeige gelb wird.
+**Protokolle.** Der Knopf unten schaltet die Aufzeichnung an und aus; je
+Aufzeichnung entsteht eine CSV-Datei, benannt nach Zeitpunkt und
+Veranstaltung. Unter Einstellungen → Protokolle lassen sich die Dateien
+einzeln herunterladen, alle zusammen als ZIP holen und einzeln löschen — auf
+dem Raspberry Pi also ohne SSH und ohne Speicherkarte auszubauen. Die gerade
+laufende Aufzeichnung lässt sich nicht löschen.
+
+Getrennt wird mit Semikolon, das Dezimalzeichen ist ein Komma; Excel und
+LibreOffice öffnen die Dateien direkt.
+
+**Markierungen.** Das Feld unten schreibt eine Bemerkung in die nächste
+Protokollzeile — Bandwechsel, Soundcheck beendet, Beschwerde eines Anwohners.
+Beim späteren Nachsehen findet man damit die Stelle wieder, um die es geht.
+
+**Grenzwerte.** Voreingestellt sind die Werte aus DIN 15905-5. Der Zielpegel
+ist frei wählbar und bestimmt, ab wann die Anzeige gelb wird.
+
+## Richtwerte nach DIN 15905-5
+
+Dieselbe Übersicht steht im Dashboard unter Einstellungen.
+
+| Wert | Bedeutung |
+|---|---|
+| **85 dB(A)** | Wird dieser Beurteilungspegel erwartet, ist das Publikum auf die mögliche Gehörgefährdung hinzuweisen — Durchsage oder Aushang. |
+| **95 dB(A)** | Ab hier ist kostenloser Gehörschutz anzubieten und zum Tragen aufzufordern. Wird keiner angeboten, ist bei 95 dB(A) auch die Obergrenze erreicht. |
+| **99 dB(A)** | Höchster Beurteilungspegel, gemittelt über jede volle halbe Stunde. Darüber ist Schluss, auch mit Gehörschutz. |
+| **135 dB(C)** | Spitzenschalldruck, der zu keinem Zeitpunkt überschritten werden darf. |
+| **Messort** | Der lauteste dem Publikum zugängliche Platz. Steht das Mikrofon woanders, gehört ein Korrekturwert dazu. |
+| **Gerät** | Ein Schallpegelmesser der Klasse 2 genügt; er ist vor und nach der Messung zu kalibrieren. Geeicht muss er nicht sein. |
+| **Dauer** | Gemessen wird über die gesamte Betriebsdauer der Beschallungsanlage, beendet erst nach dem Abschalten. |
+
+Quelle: DIN 15905-5:2022-07 „Veranstaltungstechnik – Tontechnik – Teil 5:
+Maßnahmen zum Vermeiden einer Gehörgefährdung des Publikums durch hohe
+Schallemissionen elektroakustischer Beschallungstechnik“.
+
+Die Norm selbst ist kein Gesetz; verbindlich wird sie über behördliche
+Auflagen oder Genehmigungen. Unabhängig davon gilt die Verkehrssicherungs-
+pflicht des Veranstalters, deren Umfang der Bundesgerichtshof 2001
+(VI ZR 142/00) an dieser Norm bemessen hat — ein Messprotokoll ist im
+Streitfall der Nachweis, dass die Pegel eingehalten wurden. Für Beschäftigte
+gilt zusätzlich die Lärm- und Vibrations-Arbeitsschutzverordnung.
+
+Das hier ist eine Gedächtnisstütze, keine Rechtsberatung.
 
 ---
+
+## Im Dauerbetrieb
+
+Ein Wächter prüft alle fünf Sekunden, ob noch Ton ankommt. Bleibt er aus —
+Kabel raus, Mikrofon abgemeldet, Treiber weg — startet er die Aufnahme von
+selbst neu und schreibt einen Hinweis ins Dashboard. Ohne das bliebe ein
+herausgerutschtes USB-Kabel unbemerkt, bis jemand zufällig hinschaut.
+
+Kommt über eine Minute lang gar kein Signal an, erscheint zusätzlich eine
+Warnung. Das ist das Muster eines toten Mikrofons, und in den Zahlen sieht es
+sonst aus wie eine sehr leise Veranstaltung.
+
+Solange das Dashboard geöffnet ist, hält es den Bildschirm wach. Das
+funktioniert allerdings nur bei gesicherter Verbindung, in der Praxis also auf
+dem Rechner selbst — auf dem Tablet über `http://` bleibt es beim
+Bildschirmzeitlimit des Geräts.
 
 ## Netz und Uhrzeit auf dem Pi
 

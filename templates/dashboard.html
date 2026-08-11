@@ -109,6 +109,19 @@
   .anteile span{display:block; font-size:.62rem; text-transform:uppercase;
                 letter-spacing:.12em; color:var(--muted)}
   .anteile b{font-size:1.05rem; font-weight:500}
+  .logzeile{display:flex; align-items:center; gap:8px; padding:5px 0;
+            border-bottom:1px solid var(--line)}
+  .logzeile:last-child{border-bottom:none}
+  .logzeile a{color:var(--prognose); text-decoration:none; flex:1 1 auto;
+              overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .logzeile a:hover{text-decoration:underline}
+  .logzeile span{color:var(--muted); font-size:.75rem; white-space:nowrap}
+  input.fehlt{border-color:var(--over); background:#1E1316}
+  .merkzettel{display:grid; gap:6px; font-size:.82rem}
+  .merkzettel div{display:flex; gap:10px; align-items:baseline}
+  .merkzettel b{color:var(--text); font-weight:600; flex:0 0 5.5rem;
+                font-family:ui-monospace,Consolas,monospace}
+  .merkzettel span{color:var(--muted); line-height:1.45}
 
   .fuss{display:flex; flex-wrap:wrap; gap:10px; padding:0 var(--pad) var(--pad)}
   .spitze{flex:1 1 140px; background:var(--panel-2); border:1px solid var(--line);
@@ -253,6 +266,19 @@
     <div class="eyebrow">L<sub>AF</sub> max</div>
     <div class="wert num" id="lafmax">–<span class="einheit">dB(A)</span></div>
   </div>
+  <div class="spitze" style="flex:2 1 260px">
+    <div class="eyebrow">Markierung ins Protokoll</div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <input id="marke-text" type="text" placeholder="z. B. Band 2, Soundcheck"
+             style="flex:1 1 auto;width:auto">
+      <button id="btn-marke">Setzen</button>
+    </div>
+  </div>
+  <div class="spitze" id="feld-veranstaltung" style="flex:2 1 240px">
+    <div class="eyebrow">Veranstaltung</div>
+    <input id="veranstaltung-schnell" type="text" placeholder="z. B. Gemeindefest Destedt"
+           style="width:100%;margin-top:6px">
+  </div>
   <button id="btn-log">Protokoll starten</button>
   <button id="btn-reset">Spitzenwerte zurücksetzen</button>
 </div>
@@ -268,6 +294,45 @@
       <span class="eyebrow">Anzeige auf Tablet oder Handy</span>
       <p class="info" id="info-adressen">–</p>
       <p class="info" id="info-system"></p>
+    </div>
+
+    <div class="gruppe">
+      <span class="eyebrow">Richtwerte nach DIN 15905-5</span>
+      <div class="merkzettel">
+        <div><b>85 dB(A)</b><span>Wird dieser Beurteilungspegel erwartet, ist das
+          Publikum auf die mögliche Gehörgefährdung hinzuweisen — Durchsage oder
+          Aushang.</span></div>
+        <div><b>95 dB(A)</b><span>Ab hier ist kostenloser Gehörschutz anzubieten
+          und zum Tragen aufzufordern. Wird keiner angeboten, ist bei 95 dB(A)
+          auch die Obergrenze erreicht.</span></div>
+        <div><b>99 dB(A)</b><span>Höchster Beurteilungspegel, gemittelt über jede
+          volle halbe Stunde. Darüber ist Schluss, auch mit Gehörschutz.</span></div>
+        <div><b>135 dB(C)</b><span>Spitzenschalldruck, der zu keinem Zeitpunkt
+          überschritten werden darf.</span></div>
+        <div><b>Messort</b><span>Der lauteste dem Publikum zugängliche Platz. Steht
+          das Mikrofon woanders, gehört ein Korrekturwert dazu.</span></div>
+        <div><b>Gerät</b><span>Ein Schallpegelmesser der Klasse 2 genügt; er ist
+          vor und nach der Messung zu kalibrieren. Geeicht muss er nicht
+          sein.</span></div>
+        <div><b>Dauer</b><span>Gemessen wird über die gesamte Betriebsdauer der
+          Beschallungsanlage, beendet erst nach dem Abschalten.</span></div>
+      </div>
+      <p class="info">Quelle: DIN 15905-5:2022-07 „Veranstaltungstechnik –
+        Tontechnik – Teil 5: Maßnahmen zum Vermeiden einer Gehörgefährdung des
+        Publikums durch hohe Schallemissionen elektroakustischer
+        Beschallungstechnik“. Eine Gedächtnisstütze, keine Rechtsberatung —
+        verbindlich ist die Norm selbst, und für Beschäftigte gilt zusätzlich
+        die Lärm- und Vibrations-Arbeitsschutzverordnung.</p>
+    </div>
+
+    <div class="gruppe">
+      <span class="eyebrow">Protokolle</span>
+      <div id="log-liste" class="info">–</div>
+      <div class="reihe">
+        <button id="btn-logs-zip">Alle als ZIP</button>
+        <button id="btn-logs-neu">Liste auffrischen</button>
+      </div>
+      <p class="info" id="info-logs"></p>
     </div>
 
     <div class="gruppe" id="gruppe-wlan" hidden>
@@ -418,6 +483,10 @@ function zeichne(s){
   if (s.clipping) meldungen.push("Eingang übersteuert — die Werte sind zu niedrig. " +
     "Aufnahmepegel senken und neu einmessen.");
   if (s.dropped > 20) meldungen.push(s.dropped + " Audioblöcke verloren.");
+  if (s.wache && s.wache.meldung) meldungen.push(s.wache.meldung);
+  if (s.wache && s.wache.stille_s !== null && s.wache.stille_s > 60)
+    meldungen.push("Seit " + Math.round(s.wache.stille_s/60) + " Minuten kommt "
+      + "kein Signal an — steckt das Mikrofon noch?");
   $("meldung").hidden = meldungen.length === 0;
   $("meldung").textContent = meldungen.join(" ");
 
@@ -485,9 +554,18 @@ function zeichne(s){
   }
 
   const log = s.log;
-  $("btn-log").textContent = log.aktiv
-    ? "Protokoll läuft" + (log.datei ? " · " + log.datei : "") : "Protokoll starten";
+  $("btn-log").textContent = log.aktiv ? "Protokoll beenden" : "Protokoll starten";
   $("btn-log").classList.toggle("aktiv", log.aktiv);
+  const feld = $("veranstaltung-schnell");
+  feld.disabled = log.aktiv;
+  if (log.aktiv){
+    feld.value = s.veranstaltung || "";
+    $("feld-veranstaltung").querySelector(".eyebrow").textContent =
+      log.datei ? "Schreibt in " + log.datei : "Veranstaltung";
+  } else {
+    if (document.activeElement !== feld && !feld.value) feld.value = s.veranstaltung || "";
+    $("feld-veranstaltung").querySelector(".eyebrow").textContent = "Veranstaltung";
+  }
 
   const k = s.kalibrierung;
   if (k.laeuft) $("info-kal").textContent = "Messe … noch " + Math.ceil(k.rest) + " s";
@@ -640,6 +718,7 @@ async function ladeGeraete(){
 $("btn-einstellungen").onclick = async () => {
   await ladeGeraete();
   ladeSystem();
+  ladeLogs();
   const s = letzterZustand;
   if (s){
     $("veranstaltung").value = s.veranstaltung; $("messort").value = s.ort;
@@ -698,9 +777,64 @@ $("btn-settings").onclick = async () => {
 
 $("btn-log").onclick = async () => {
   const aktiv = !(letzterZustand && letzterZustand.log.aktiv);
-  await post("/api/log", {aktiv});
+  const feld = $("veranstaltung-schnell");
+  const r = await post("/api/log", {aktiv, veranstaltung: feld.value});
+  if (r.fehler){
+    feld.classList.add("fehlt");
+    feld.focus();
+    $("meldung").hidden = false;
+    $("meldung").textContent = r.fehler;
+    return;
+  }
+  feld.classList.remove("fehlt");
+  $("meldung").hidden = true;
   tickSchnell();
 };
+$("veranstaltung-schnell").addEventListener("input", () =>
+  $("veranstaltung-schnell").classList.remove("fehlt"));
+$("veranstaltung-schnell").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !(letzterZustand && letzterZustand.log.aktiv))
+    $("btn-log").click();
+});
+function menge(bytes){
+  return bytes > 1048576 ? (bytes/1048576).toFixed(1).replace(".",",") + " MB"
+       : bytes > 1024    ? Math.round(bytes/1024) + " kB"
+                         : bytes + " B";
+}
+
+async function ladeLogs(){
+  try {
+    const d = await (await fetch("/api/logs")).json();
+    const ziel = $("log-liste");
+    if (!d.dateien.length){
+      ziel.textContent = "Noch keine Protokolle. Unten „Protokoll starten“ drücken.";
+      return;
+    }
+    ziel.innerHTML = "";
+    d.dateien.forEach(f => {
+      const zeile = document.createElement("div");
+      zeile.className = "logzeile";
+      const laeuft = (f.name === d.laeuft) ? " (läuft)" : "";
+      zeile.innerHTML = `<a href="/logs/${encodeURIComponent(f.name)}" download>${f.name}</a>`
+        + `<span>${f.geaendert} · ${menge(f.bytes)}${laeuft}</span>`;
+      const weg = document.createElement("button");
+      weg.className = "klein"; weg.textContent = "löschen";
+      weg.onclick = async () => {
+        if (!confirm(f.name + " wirklich löschen?")) return;
+        const r = await post("/api/logs/loeschen", {name: f.name});
+        $("info-logs").textContent = r.text || r.fehler || "";
+        ladeLogs();
+      };
+      zeile.appendChild(weg);
+      ziel.appendChild(zeile);
+    });
+    $("info-logs").textContent = "Liegen auf dem Rechner unter " + d.verzeichnis;
+  } catch { $("info-logs").textContent = "Protokollliste nicht abrufbar."; }
+}
+
+$("btn-logs-neu").onclick = ladeLogs;
+$("btn-logs-zip").onclick = () => { window.location.href = "/logs.zip"; };
+
 async function ladeSystem(){
   try {
     const d = await (await fetch("/api/system")).json();
@@ -800,6 +934,32 @@ $("btn-tempo").onclick = async () => {
   setzeTempo(neu);
   await post("/api/settings", {rta_tau: neu});
 };
+$("btn-marke").onclick = async () => {
+  const feld = $("marke-text");
+  const r = await post("/api/markierung", {text: feld.value});
+  $("meldung").hidden = false;
+  $("meldung").textContent = r.text;
+  if (r.ok) feld.value = "";
+  setTimeout(tickSchnell, 2500);
+};
+$("marke-text").addEventListener("keydown", e => {
+  if (e.key === "Enter") $("btn-marke").click();
+});
+
+// Bildschirm wachhalten, solange das Dashboard offen ist. Die Schnittstelle
+// gibt es nur in gesichertem Zusammenhang — ueber http also nur auf dem
+// eigenen Rechner, nicht auf dem Tablet.
+let wachhalter = null;
+async function bildschirmWachhalten(){
+  if (!("wakeLock" in navigator)) return;
+  try { wachhalter = await navigator.wakeLock.request("screen"); } catch {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && wachhalter === null)
+    bildschirmWachhalten();
+});
+bildschirmWachhalten();
+
 $("btn-reset").onclick = async () => { await post("/api/reset-peaks"); tickSchnell(); };
 window.addEventListener("resize", () => { zeichneVerlauf(); zeichneRta(); });
 
