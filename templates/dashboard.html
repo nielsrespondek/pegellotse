@@ -327,6 +327,17 @@
 
     <div class="gruppe">
       <span class="eyebrow">Protokolle</span>
+      <div class="reihe">
+        <label>Eine Zeile alle
+          <select id="log-takt">
+            <option value="1">1 Sekunde</option>
+            <option value="5">5 Sekunden</option>
+            <option value="10">10 Sekunden</option>
+            <option value="30">30 Sekunden</option>
+          </select>
+        </label>
+        <span class="info" id="info-takt"></span>
+      </div>
       <div id="log-liste" class="info">–</div>
       <div class="reihe">
         <button id="btn-logs-zip">Alle als ZIP</button>
@@ -729,6 +740,8 @@ $("btn-einstellungen").onclick = async () => {
   const s = letzterZustand;
   if (s){
     $("veranstaltung").value = s.veranstaltung; $("messort").value = s.ort;
+    $("log-takt").value = String(Math.round(s.log_intervall || 1));
+    zeigeTakt();
     $("lim30").value = s.limits.laeq30; $("limziel").value = s.limits.ziel;
     $("limpeak").value = s.limits.lcpeak; $("offset").value = s.calibration_db.toFixed(2);
   }
@@ -771,6 +784,20 @@ $("btn-calfile-weg").onclick = async () => {
   await post("/api/calfile/entfernen");
   $("info-calfile").className = "info";
   $("info-calfile").textContent = "Korrektur entfernt.";
+};
+
+function zeigeTakt(){
+  const takt = Number($("log-takt").value);
+  // 68 Byte je Zeile, gemessen an bisherigen Protokollen
+  const proStunde = Math.round(3600 / takt * 68 / 1024);
+  $("info-takt").textContent = takt === 1
+    ? "voller Verlauf, etwa " + proStunde + " KB je Stunde"
+    : "etwa " + proStunde + " KB je Stunde";
+}
+$("log-takt").onchange = async () => {
+  zeigeTakt();
+  const r = await post("/api/settings", {log_intervall: $("log-takt").value});
+  if (r.fehler) $("info-takt").textContent = r.fehler;
 };
 
 $("btn-settings").onclick = async () => {

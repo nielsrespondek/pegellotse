@@ -81,6 +81,7 @@ DEFAULTS = {
     "calibration_time": "",
     "calibration_file": "",   # Dateiname der geladenen Mikrofon-Kalibrierdatei
     "log_enabled": False,
+    "log_intervall": 1.0,     # Sekunden zwischen zwei Protokollzeilen
     "rta_tau": 0.125,         # Zeitbewertung der Terzanzeige: 0.125 = Fast
     "limits": {"laeq30": 99.0, "lcpeak": 135.0, "ziel": 95.0},
     "ort": "Messplatz",
@@ -658,10 +659,12 @@ class Monitor:
         path = LOG_DIR / f"{stem}.csv"
         self.csv_file = open(path, "w", newline="", encoding="utf-8-sig")
         self.csv_writer = csv.writer(self.csv_file, delimiter=";")
+        takt = self.cfg.get("log_intervall", 1.0)
         self.csv_writer.writerow([f"# {APP_NAME} {VERSION}",
                                   f"Offset {self.cfg['calibration_db']:.2f} dB",
                                   f"Mikrofon {self.cfg['device_name']}",
-                                  f"Ort {self.cfg['ort']}"])
+                                  f"Ort {self.cfg['ort']}",
+                                  f"Takt {takt:.0f} s"])
         self.csv_writer.writerow([
             "Zeit", "LAF", "LAeq_1s", "LAeq_10s", "LAeq_1min", "LAeq_5min",
             "LAeq_30min", "LAeq_60min", "LCpeak", "Block_LAeq", "Uebersteuert",
@@ -754,7 +757,7 @@ class Monitor:
                         self._finish_calibration()
 
                 if self.cfg["log_enabled"]:
-                    if t_end - self._last_log >= 1.0:
+                    if t_end - self._last_log >= self.cfg.get("log_intervall", 1.0):
                         self._last_log = t_end
                         self._write_log(t_end, result)
                 elif self.csv_writer is not None:
@@ -854,6 +857,7 @@ class Monitor:
                 "ergebnis": self.cal_result,
             },
             "rta_tau": self.cfg.get("rta_tau", 0.125),
+            "log_intervall": self.cfg.get("log_intervall", 1.0),
             "adressen": self.adressen,
             "version": VERSION,
         })
@@ -1138,6 +1142,14 @@ def build_app(monitor: Monitor) -> Flask:
                     monitor.cfg["limits"][key] = float(data[key])
                 except (TypeError, ValueError):
                     return jsonify({"fehler": f"{key} ist keine Zahl"}), 400
+        if "log_intervall" in data:
+            try:
+                takt = float(data["log_intervall"])
+            except (TypeError, ValueError):
+                return jsonify({"fehler": "Intervall ist keine Zahl"}), 400
+            if takt not in (1.0, 5.0, 10.0, 30.0):
+                return jsonify({"fehler": "Erlaubt sind 1, 5, 10 oder 30 Sekunden"}), 400
+            monitor.cfg["log_intervall"] = takt
         if "rta_tau" in data:
             try:
                 tau = float(data["rta_tau"])

@@ -242,6 +242,18 @@ beides zugleich. Deshalb gilt:
   zeigt dann ein zweites `wifi`-Gerät). Wird der Zugangspunkt bewusst beendet,
   bleibt er bis zum nächsten Neustart aus.
 
+**Protokolltakt.** Unter Einstellungen → Protokolle steht „Eine Zeile alle …" —
+wahlweise 1, 5, 10 oder 30 Sekunden. Ein Sekundentakt zeigt den Verlauf
+lückenlos und kostet rund 240 KB je Stunde, 10 Sekunden reichen für die
+Dokumentation und kosten ein Zehntel davon. DIN 15905-5 arbeitet ohnehin mit
+dem LAeq über 30 Minuten; die feine Auflösung ist Zugabe für die eigene
+Nachschau. Der eingestellte Takt steht in der Kopfzeile jeder Protokolldatei.
+
+Die Dateien tragen Semikolon als Trennzeichen und Komma als Dezimalzeichen.
+Excel öffnet sie beim Doppelklick je nach Windows-Regionseinstellung falsch;
+zuverlässig geht es über Daten → Aus Text/CSV mit Dateiursprung UTF-8,
+Trennzeichen Semikolon und Gebietsschema Deutsch.
+
 **Uhrzeit.** Ein Pi hat keine batteriegepufferte Uhr. Das Dashboard vergleicht
 beim Öffnen die Uhr des Pi mit der des Endgeräts, das gerade daraufschaut, und
 bietet an, sie zu übernehmen. Während einer laufenden Aufzeichnung wird die
