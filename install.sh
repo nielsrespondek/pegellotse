@@ -27,7 +27,7 @@
 #     HOSTNAME_NEU=pegellotse Rechnernamen setzen (Aufruf ueber name.local)
 #     LUEFTER_GPIO=12         temperaturgesteuerter Luefter an diesem GPIO
 #     LUEFTER_TEMP=55         Einschalttemperatur in Grad (Standard 55)
-#     HOTSPOT=0               Notfall-Zugangspunkt nicht einrichten
+#     HOTSPOT=0               Zugangspunkt nicht einrichten
 #     HOTSPOT_SSID=Pegellotse         Name des Zugangspunkts
 #     HOTSPOT_PW=pegellotse           Kennwort (mindestens 8 Zeichen)
 #
@@ -66,7 +66,7 @@ if [ -f "$QUELLE/pegellotse.py" ]; then
     echo "  aus dem oertlichen Ordner: $QUELLE"
     cp -r "$QUELLE"/pegellotse.py "$QUELLE"/messkern.py "$QUELLE"/selftest.py \
           "$QUELLE"/requirements.txt "$QUELLE"/LICENSE "$ZIEL"/
-    [ -f "$QUELLE/hotspot.sh" ] && cp "$QUELLE"/hotspot.sh "$ZIEL"/ || true
+    cp "$QUELLE"/wlan.sh "$ZIEL"/
     cp -r "$QUELLE"/templates "$ZIEL"/
     [ -d "$QUELLE/beispiel" ] && cp -r "$QUELLE"/beispiel "$ZIEL"/ || true
 else
@@ -80,7 +80,7 @@ else
    Andere Quelle waehlen mit:  sudo REPO=benutzer/projekt BRANCH=main ./install.sh"
     cp -r "$TMP"/pegellotse.py "$TMP"/messkern.py "$TMP"/selftest.py \
           "$TMP"/requirements.txt "$TMP"/LICENSE "$TMP"/templates "$ZIEL"/
-    [ -f "$TMP/hotspot.sh" ] && cp "$TMP"/hotspot.sh "$ZIEL"/ || true
+    cp "$TMP"/wlan.sh "$ZIEL"/
     [ -d "$TMP/beispiel" ] && cp -r "$TMP"/beispiel "$ZIEL"/ || true
     rm -rf "$TMP"
 fi
@@ -88,6 +88,13 @@ fi
 # Dateien, die ueber Windows gewandert sind, tragen manchmal CRLF-Zeilenenden.
 # Python stoert das nicht, Shell-Skripte schon — also vorsorglich glaetten.
 sed -i 's/\r$//' "$ZIEL"/*.py "$ZIEL"/*.sh 2>/dev/null || true
+# Vorgaenger von wlan.sh
+rm -f "$ZIEL/hotspot.sh"
+# wlan.sh laeuft mit root-Rechten: es darf nur root gehoeren und von
+# niemandem sonst veraendert werden koennen.
+chown root:root "$ZIEL/wlan.sh"
+chmod 755 "$ZIEL/wlan.sh"
+sed -i "s|^DATEN_STANDARD=.*|DATEN_STANDARD=$DATEN|" "$ZIEL/wlan.sh"
 
 sage "Python-Umgebung einrichten"
 # --system-site-packages: numpy, scipy und flask kommen aus den Paketquellen
@@ -107,10 +114,12 @@ usermod -aG audio "$BENUTZER"
 mkdir -p "$DATEN"
 chown -R "$BENUTZER:$BENUTZER" "$DATEN"
 
-# Der Dienst darf die Uhr stellen und WLAN-Zugaenge verwalten — sonst nichts.
+# Der Dienst darf die Uhr stellen, WLAN-Zugaenge verwalten und ueber wlan.sh
+# Netz und Zugangspunkt wechseln — sonst nichts.
 cat > /etc/sudoers.d/pegellotse <<EOF
 $BENUTZER ALL=(root) NOPASSWD: /usr/bin/timedatectl set-time *
 $BENUTZER ALL=(root) NOPASSWD: /usr/bin/nmcli
+$BENUTZER ALL=(root) NOPASSWD: $ZIEL/wlan.sh *
 EOF
 chmod 440 /etc/sudoers.d/pegellotse
 visudo -c -f /etc/sudoers.d/pegellotse >/dev/null || fehler "sudo-Regel fehlerhaft."
@@ -147,18 +156,18 @@ systemctl enable "$DIENST"
 # alte Prozess mit der alten Dienstdatei, etwa auf dem alten Port.
 systemctl restart "$DIENST"
 
-if [ "${HOTSPOT:-1}" = "1" ] && [ -f "$ZIEL/hotspot.sh" ]; then
+if [ "${HOTSPOT:-1}" = "1" ]; then
     SSID="${HOTSPOT_SSID:-Pegellotse}"
     PW="${HOTSPOT_PW:-pegellotse}"
     if [ ${#PW} -lt 8 ]; then
         echo "  HOTSPOT_PW ist zu kurz (mindestens 8 Zeichen) — uebersprungen."
     else
         sage "Notfall-Zugangspunkt einrichten ($SSID)"
-        chmod +x "$ZIEL/hotspot.sh"
-        # Nicht automatisch verbinden: der Zugangspunkt geht nur an, wenn
-        # hotspot.sh feststellt, dass sonst nichts zustande kommt.
+        # Nicht automatisch verbinden: wann der Zugangspunkt angeht und auf
+        # welchem WLAN-Chip, entscheidet wlan.sh. Deshalb auch an kein
+        # Geraet gebunden — steckt ein USB-Stick, kann er dorthin wandern.
         nmcli connection delete hotspot >/dev/null 2>&1 || true
-        nmcli connection add type wifi ifname wlan0 con-name hotspot \
+        nmcli connection add type wifi con-name hotspot \
             autoconnect no ssid "$SSID" \
             802-11-wireless.mode ap 802-11-wireless.band bg \
             ipv4.method shared \
@@ -172,7 +181,7 @@ Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
-ExecStart=$ZIEL/hotspot.sh hotspot
+ExecStart=$ZIEL/wlan.sh waechter
 EOF
 
         cat > /etc/systemd/system/pegellotse-hotspot.timer <<EOF
@@ -192,6 +201,8 @@ EOF
         systemctl restart pegellotse-hotspot.timer
         echo "  Kommt kein Netz zustande, macht der Rechner nach etwa 90 s"
         echo "  selbst ein WLAN auf: $SSID / $PW  -> http://10.42.0.1$ANHANG"
+        echo "  Mit zusaetzlichem USB-WLAN-Stick laeuft der Zugangspunkt immer,"
+        echo "  und das zweite WLAN bleibt frei zum Suchen und Verbinden."
     fi
 fi
 

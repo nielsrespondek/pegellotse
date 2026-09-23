@@ -141,7 +141,7 @@
 
   .meldung{margin:0 var(--pad) var(--pad); padding:10px 14px; border-radius:8px;
     background:#2A1518; border:1px solid #5A2A2E; color:#F0C3C0; font-size:.85rem}
-  .meldung[hidden]{display:none}
+  .meldung[hidden], label[hidden]{display:none}
   .meldung.uhr{background:#241C10; border-color:#5A4526; color:#EBD5AC}
   .meldung.uhr button{margin-left:10px; padding:5px 10px; font-size:.8rem;
                       background:transparent; color:inherit; border-color:#5A4526}
@@ -338,20 +338,27 @@
     <div class="gruppe" id="gruppe-wlan" hidden>
       <span class="eyebrow">WLAN</span>
       <p class="info" id="info-wlanlage">–</p>
+      <p class="info" id="info-chips"></p>
+      <p class="info" id="info-wechsel" hidden></p>
       <div class="reihe">
         <label style="flex:1 1 160px">Netz
-          <select id="wlan-liste"><option value="">– suchen –</option></select>
+          <select id="wlan-liste"><option value="">– Liste auffrischen –</option></select>
+        </label>
+        <label id="wlan-hand-feld" hidden style="flex:1 1 160px">Netzname
+          <input id="wlan-hand" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
         </label>
         <label>Kennwort <input id="wlan-pw" type="password" autocomplete="off"></label>
       </div>
       <div class="reihe">
-        <label style="flex-direction:row; align-items:center; gap:6px">
-          <input id="wlan-sofort" type="checkbox" style="width:auto">
-          sofort verbinden
+        <label style="display:flex; align-items:center; gap:6px">
+          <input id="wlan-verbinden" type="checkbox" style="width:auto" checked>
+          gleich verbinden
         </label>
-        <button id="btn-wlan-speichern">Hinzufügen</button>
-        <button id="btn-wlan-suchen">Netze suchen</button>
+        <button id="btn-wlan-speichern">Speichern</button>
+        <button id="btn-wlan-suchen">Liste auffrischen</button>
+        <button id="btn-wlan-neusuche" hidden title="Nur ein WLAN-Chip: der Zugangspunkt geht dafür kurz aus">Neu suchen</button>
       </div>
+      <p class="info" id="info-scan"></p>
       <div class="reihe">
         <button id="btn-hotspot">Zugangspunkt</button>
         <span class="info" id="info-hotspot"></span>
@@ -717,7 +724,7 @@ async function ladeGeraete(){
 
 $("btn-einstellungen").onclick = async () => {
   await ladeGeraete();
-  ladeSystem();
+  ladeSystem().then(() => { if (!$("gruppe-wlan").hidden) ladeWlan(); });
   ladeLogs();
   const s = letzterZustand;
   if (s){
@@ -857,27 +864,96 @@ async function ladeSystem(){
     }
     $("info-system").innerHTML = text;
     $("gruppe-wlan").hidden = !(d.linux && d.wlan && d.wlan.verfuegbar);
+    systemPort = d.port;
     const hs = d.hotspot || {};
+    wlanLage = d.wlan || {};
+    hotspotAktiv = !!hs.aktiv;
     $("btn-hotspot").hidden = !hs.vorhanden;
     $("btn-hotspot").textContent = hs.aktiv ? "Zugangspunkt beenden" : "Zugangspunkt starten";
     $("btn-hotspot").classList.toggle("aktiv", !!hs.aktiv);
     $("info-hotspot").textContent = hs.aktiv
-      ? "Der Rechner macht gerade selbst ein WLAN auf."
-      : (hs.vorhanden ? "Springt von allein an, wenn kein Netz zustande kommt." : "");
-    if (d.wlan && d.wlan.verbunden)
-      $("info-wlanlage").innerHTML = "Verbunden mit <b>" + d.wlan.verbunden + "</b>" +
-        (d.wlan.signal !== null ? " (" + d.wlan.signal + " %)" : "");
-    else if (d.wlan && d.wlan.verfuegbar)
-      $("info-wlanlage").textContent = "Zurzeit mit keinem WLAN verbunden.";
+      ? "Der Rechner macht gerade selbst ein WLAN auf" +
+        (wlanLage.hotspot_geraet ? " (" + wlanLage.hotspot_geraet + ")." : ".")
+      : (hs.vorhanden
+          ? (wlanLage.zwei_chips ? "Läuft bei zwei WLAN-Chips normalerweise immer."
+                                 : "Springt von allein an, wenn kein Netz zustande kommt.")
+          : "");
+    if (wlanLage.verbunden)
+      $("info-wlanlage").innerHTML = "Verbunden mit <b>" + esc(wlanLage.verbunden) + "</b>" +
+        (wlanLage.signal !== null ? " (" + wlanLage.signal + " %)" : "") +
+        (wlanLage.client_geraet ? " über " + wlanLage.client_geraet : "");
+    else if (wlanLage.verfuegbar)
+      $("info-wlanlage").textContent = "Zurzeit mit keinem fremden WLAN verbunden.";
+    $("info-chips").textContent = wlanLage.zwei_chips
+      ? "Zwei WLAN-Chips: einer macht den Zugangspunkt, der andere sucht und verbindet sich."
+      : (wlanLage.chips === 1 && hs.aktiv
+          ? "Ein WLAN-Chip: solange der Zugangspunkt läuft, kann er nicht suchen. " +
+            "Die Liste stammt von kurz vor dem Start. Ein USB-WLAN-Stick hebt das auf."
+          : "");
+    $("btn-wlan-neusuche").hidden = !(hs.aktiv && !wlanLage.live_suche);
+    zeigeWechsel(d.wlan_wechsel);
   } catch {}
 }
 
+let systemPort = 80, wlanLage = {}, hotspotAktiv = false, wechselWache = null;
+const HAND = "__hand__";
+function esc(t){ return String(t).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function zeigeWechsel(w){
+  const el = $("info-wechsel");
+  if (!w || w.vor > 900){ el.hidden = true; return; }
+  el.hidden = false;
+  el.className = "info " + (w.zustand === "ok" ? "gut" : w.zustand === "fehler" ? "schlecht" : "");
+  const wann = w.vor < 90 ? "gerade eben" : "vor " + Math.round(w.vor / 60) + " min";
+  el.textContent = (w.zustand === "laeuft" ? "Netzwechsel läuft: " : "Letzter Netzwechsel (" + wann + "): ")
+                   + w.text;
+}
+
+// Nach einem Wechsel nachsehen, wie es ausging — solange die Seite noch
+// erreichbar ist (bei zwei Chips oder im selben Netz).
+function wechselVerfolgen(){
+  clearInterval(wechselWache);
+  let runden = 0;
+  wechselWache = setInterval(async () => {
+    if (++runden > 40){ clearInterval(wechselWache); return; }
+    try {
+      const d = await (await fetch("/api/wlan/wechsel")).json();
+      zeigeWechsel(d.wechsel);
+      if (d.wechsel && d.wechsel.zustand !== "laeuft"){
+        clearInterval(wechselWache); ladeSystem(); ladeWlan();
+      }
+    } catch {}
+  }, 2000);
+}
+
+async function wlanVerbinden(name){
+  const nurEinChip = hotspotAktiv && !wlanLage.zwei_chips;
+  if (nurEinChip && !confirm("Der Zugangspunkt geht jetzt aus, diese Seite verliert die Verbindung.\n\n"
+      + "Klappt die Verbindung mit „" + name + "“, ist der Pegellotse dort unter der "
+      + "bisherigen .local-Adresse erreichbar. Klappt sie nicht, ist der Zugangspunkt "
+      + "nach etwa einer Minute wieder da.")) return false;
+  const r = await post("/api/wlan/verbinden", {name});
+  $("info-wlan").className = "info " + (r.ok ? "" : "schlecht");
+  $("info-wlan").textContent = r.text;
+  if (r.ok) wechselVerfolgen();
+  return r.ok;
+}
+
+$("wlan-liste").onchange = () => {
+  const hand = $("wlan-liste").value === HAND;
+  $("wlan-hand-feld").hidden = !hand;
+  if (hand) $("wlan-hand").focus();
+};
+
 async function ladeWlan(){
-  $("info-wlan").textContent = "suche …";
+  $("info-scan").textContent = wlanLage.live_suche === false ? "" : "suche …";
   try {
     const d = await (await fetch("/api/wlan")).json();
-    if (d.fehler){ $("info-wlan").textContent = d.fehler; return; }
+    if (d.fehler){ $("info-scan").textContent = d.fehler; return; }
+    wlanLage = d.lage || wlanLage;
     const sel = $("wlan-liste");
+    const vorher = sel.value;
     sel.innerHTML = "";
     d.gefunden.forEach(n => {
       const o = document.createElement("option");
@@ -886,47 +962,84 @@ async function ladeWlan(){
                       (n.gesichert ? "" : "  offen");
       sel.appendChild(o);
     });
-    if (!d.gefunden.length){
-      const o = document.createElement("option");
-      o.value = ""; o.textContent = "– kein Netz gefunden –";
-      sel.appendChild(o);
-    }
+    const h = document.createElement("option");
+    h.value = HAND; h.textContent = "Anderes Netz von Hand eingeben …";
+    sel.appendChild(h);
+    if ([...sel.options].some(o => o.value === vorher)) sel.value = vorher;
+    else if (!d.gefunden.length) sel.value = HAND;
+    sel.onchange();
+
+    if (d.live) $("info-scan").textContent = d.gefunden.length ? "" : "Kein Netz in Reichweite gefunden.";
+    else if (d.stand !== null)
+      $("info-scan").textContent = "Liste von vor " +
+        (d.stand < 90 ? d.stand + " s" : Math.round(d.stand / 60) + " min") +
+        " — der einzige WLAN-Chip macht gerade den Zugangspunkt." +
+        " Fehlt ein Netz: von Hand eingeben oder „Neu suchen“.";
+    else $("info-scan").textContent = "Keine Netzliste vorhanden — Netz von Hand eingeben oder „Neu suchen“.";
+
     $("wlan-gespeichert").innerHTML = d.gespeichert.length
-      ? "Gespeichert: " + d.gespeichert.map(g =>
-          `${g.name} <button class="klein" data-weg="${g.name}">entfernen</button>`).join(" ")
+      ? "Gespeichert:<br>" + d.gespeichert.map(g =>
+          `${esc(g.name)} ` +
+          (g.name === wlanLage.verbunden ? "<b>(verbunden)</b> "
+             : `<button class="klein" data-verbinden="${esc(g.name)}">verbinden</button>`) +
+          `<button class="klein" data-weg="${esc(g.name)}">entfernen</button>`).join("<br>")
       : "Noch keine Netze gespeichert.";
     $("wlan-gespeichert").querySelectorAll("button[data-weg]").forEach(b => {
       b.onclick = async () => {
+        if (!confirm(b.dataset.weg + " wirklich entfernen?")) return;
         const r = await post("/api/wlan/entfernen", {name: b.dataset.weg});
         $("info-wlan").textContent = r.text; ladeWlan();
       };
     });
-    $("info-wlan").textContent = "";
-  } catch { $("info-wlan").textContent = "Netzsuche fehlgeschlagen."; }
+    $("wlan-gespeichert").querySelectorAll("button[data-verbinden]").forEach(b => {
+      b.onclick = () => wlanVerbinden(b.dataset.verbinden);
+    });
+    zeigeWechsel(d.wechsel);
+  } catch { $("info-scan").textContent = "Netzliste konnte nicht geladen werden."; }
 }
 
 $("btn-wlan-suchen").onclick = ladeWlan;
+$("btn-wlan-neusuche").onclick = async () => {
+  if (!confirm("Der Zugangspunkt geht dafür etwa 15 Sekunden aus. Danach das Gerät "
+               + "wieder mit dem WLAN des Pegellotsen verbinden und die Liste auffrischen.")) return;
+  const r = await post("/api/wlan/suchen", {});
+  $("info-scan").textContent = r.text;
+};
 $("btn-hotspot").onclick = async () => {
   const an = $("btn-hotspot").textContent.includes("starten");
-  $("info-hotspot").textContent = "…";
-  if (an && !confirm("Der Rechner verlässt dafür das aktuelle Netz. Diese Seite "
+  const anhang = systemPort === 80 ? "" : ":" + systemPort;
+  if (an && !wlanLage.zwei_chips && !confirm("Der Rechner verlässt dafür das aktuelle Netz. Diese Seite "
                      + "verliert die Verbindung; danach mit dem WLAN des Rechners "
-                     + "verbinden und http://10.42.0.1:8000 aufrufen.")) {
-    $("info-hotspot").textContent = ""; return;
-  }
+                     + "verbinden und http://10.42.0.1" + anhang + " aufrufen.")) return;
+  if (!an && !wlanLage.zwei_chips && !wlanLage.verbunden && !confirm("Ohne Zugangspunkt ist der "
+                     + "Rechner in keinem Netz. Kommt keine Verbindung zustande, startet er ihn "
+                     + "nach etwa einer Minute von selbst wieder. Trotzdem beenden?")) return;
+  $("info-hotspot").textContent = "…";
   const r = await post("/api/hotspot", {an});
   $("info-hotspot").textContent = r.text;
-  ladeSystem();
+  setTimeout(ladeSystem, 6000);
 };
 $("btn-wlan-speichern").onclick = async () => {
-  const ssid = $("wlan-liste").value;
-  $("info-wlan").textContent = "…";
+  const hand = $("wlan-liste").value === HAND;
+  const ssid = (hand ? $("wlan-hand").value : $("wlan-liste").value).trim();
+  if (!ssid){ $("info-wlan").className = "info schlecht";
+              $("info-wlan").textContent = "Bitte ein Netz wählen oder den Namen eingeben."; return; }
+  const verbinden = $("wlan-verbinden").checked;
+  const nurEinChip = hotspotAktiv && !wlanLage.zwei_chips;
+  if (verbinden && nurEinChip && !confirm("Das Netz wird gespeichert, dann geht der Zugangspunkt "
+      + "aus und diese Seite verliert die Verbindung.\n\nKlappt es, ist der Pegellotse im Netz "
+      + "„" + ssid + "“ erreichbar. Klappt es nicht (etwa falsches Kennwort), ist der "
+      + "Zugangspunkt nach etwa einer Minute wieder da — unter Einstellungen → WLAN steht dann der Grund.")) return;
+  $("info-wlan").className = "info"; $("info-wlan").textContent = "…";
   const r = await post("/api/wlan", {ssid, passwort: $("wlan-pw").value,
-                                     sofort: $("wlan-sofort").checked});
+                                     versteckt: hand, verbinden});
   $("info-wlan").className = "info " + (r.ok ? "gut" : "schlecht");
   $("info-wlan").textContent = r.text;
-  $("wlan-pw").value = "";
-  if (r.ok) { ladeSystem(); ladeWlan(); }
+  if (r.ok) {
+    $("wlan-pw").value = ""; $("wlan-hand").value = "";
+    if (verbinden) wechselVerfolgen();
+    ladeSystem(); ladeWlan();
+  }
 };
 
 $("btn-tempo").onclick = async () => {

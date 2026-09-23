@@ -228,96 +228,238 @@ def gedrosselt() -> dict | None:
     }
 
 
+WLAN_SKRIPT = BUNDLE_DIR / "wlan.sh"
+WLAN_SCAN = DATA_DIR / "wlan-scan.txt"          # zuletzt gesehene Netze
+WLAN_WECHSEL = DATA_DIR / "wlan-wechsel.txt"    # Ergebnis des letzten Netzwechsels
+HOTSPOT = "hotspot"
+
+
+def _felder(zeile: str) -> list[str]:
+    """Zerlegt eine nmcli-Zeile im -t-Format. Doppelpunkte in Namen kommen als \\: an."""
+    felder, aktuell, i = [], [], 0
+    while i < len(zeile):
+        z = zeile[i]
+        if z == "\\" and i + 1 < len(zeile):
+            aktuell.append(zeile[i + 1]); i += 2; continue
+        if z == ":":
+            felder.append("".join(aktuell)); aktuell = []
+        else:
+            aktuell.append(z)
+        i += 1
+    felder.append("".join(aktuell))
+    return felder
+
+
+def _wlan_skript(*argumente: str, timeout: float = 20.0) -> tuple[bool, str]:
+    """Ruft wlan.sh mit root-Rechten auf (eine enge sudo-Regel erlaubt genau das)."""
+    if not WLAN_SKRIPT.exists():
+        return False, "wlan.sh fehlt — bitte install.sh erneut ausführen."
+    try:
+        lauf = subprocess.run(["sudo", "-n", str(WLAN_SKRIPT), *argumente],
+                              capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    if lauf.returncode != 0:
+        return False, (lauf.stderr or lauf.stdout).strip() or "wlan.sh meldet einen Fehler."
+    return True, lauf.stdout.strip()
+
+
+def wlan_geraete() -> list[dict]:
+    """WLAN-Chips: eingebaut und ggf. USB-Stick."""
+    ok, ausgabe = _nmcli("-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device")
+    geraete = []
+    if not ok:
+        return geraete
+    for zeile in ausgabe.splitlines():
+        f = _felder(zeile)
+        if len(f) >= 4 and f[1] == "wifi":
+            pfad = Path("/sys/class/net") / f[0] / "device"
+            try:
+                usb = "/usb" in str(pfad.resolve())
+            except OSError:
+                usb = False
+            geraete.append({"geraet": f[0], "zustand": f[2],
+                            "verbindung": "" if f[3] in ("", "--") else f[3],
+                            "usb": usb})
+    return geraete
+
+
 def wlan_lage() -> dict:
-    """Womit ist der Rechner gerade verbunden?"""
-    lage = {"verbunden": None, "signal": None, "verfuegbar": bool(shutil.which("nmcli"))}
-    ok, ausgabe = _nmcli("-t", "-f", "ACTIVE,SSID,SIGNAL", "device", "wifi")
-    if ok:
-        for zeile in ausgabe.splitlines():
-            teile = zeile.split(":")
-            if teile and teile[0] == "yes" and len(teile) >= 3:
-                lage["verbunden"] = teile[1]
-                lage["signal"] = int(teile[2]) if teile[2].isdigit() else None
-                break
+    """Womit ist der Rechner verbunden, und wie viele WLAN-Chips hat er?"""
+    lage = {"verbunden": None, "signal": None, "verfuegbar": bool(shutil.which("nmcli")),
+            "chips": 0, "zwei_chips": False, "hotspot_geraet": None,
+            "client_geraet": None, "live_suche": False}
+    if not lage["verfuegbar"]:
+        return lage
+    geraete = wlan_geraete()
+    lage["chips"] = len(geraete)
+    lage["zwei_chips"] = len(geraete) >= 2
+    ap = next((g for g in geraete if g["verbindung"] == HOTSPOT), None)
+    lage["hotspot_geraet"] = ap["geraet"] if ap else None
+    andere = [g for g in geraete if g is not ap]
+    client = next((g for g in andere if g["verbindung"]), None) or (andere[0] if andere else None)
+    if client:
+        lage["client_geraet"] = client["geraet"]
+        lage["live_suche"] = True          # dieser Chip ist frei zum Suchen
+        if client["verbindung"]:
+            lage["verbunden"] = client["verbindung"]
+            ok, ausgabe = _nmcli("-t", "-f", "ACTIVE,SIGNAL", "device", "wifi", "list",
+                                 "ifname", client["geraet"], "--rescan", "no")
+            if ok:
+                for zeile in ausgabe.splitlines():
+                    f = _felder(zeile)
+                    if len(f) >= 2 and f[0] == "yes" and f[1].isdigit():
+                        lage["signal"] = int(f[1])
+                        break
     return lage
 
 
+def _netze_lesen(ausgabe: str) -> list[dict]:
+    gefunden, gesehen = [], set()
+    for zeile in ausgabe.splitlines():
+        f = _felder(zeile)
+        if not f or not f[0] or f[0] in gesehen:
+            continue
+        gesehen.add(f[0])
+        gefunden.append({
+            "ssid": f[0],
+            "signal": int(f[1]) if len(f) > 1 and f[1].isdigit() else None,
+            "gesichert": bool(len(f) > 2 and f[2].strip() not in ("", "--")),
+        })
+    gefunden.sort(key=lambda n: -(n["signal"] or 0))
+    return gefunden
+
+
+def _scan_merken(ausgabe: str) -> None:
+    try:
+        tmp = WLAN_SCAN.with_suffix(".tmp")
+        tmp.write_text(ausgabe, encoding="utf-8")
+        os.replace(tmp, WLAN_SCAN)     # ersetzt auch eine Datei, die root angelegt hat
+    except OSError:
+        pass
+
+
+def wlan_wechsel_status() -> dict | None:
+    try:
+        zustand, ziel, zeit, text = WLAN_WECHSEL.read_text(encoding="utf-8").strip().split("|", 3)
+        return {"zustand": zustand, "ziel": ziel, "vor": int(time.time() - int(zeit)),
+                "text": text}
+    except (OSError, ValueError):
+        return None
+
+
 def wlan_netze() -> dict:
-    """Gespeicherte und in Reichweite gefundene Netze."""
+    """
+    Gespeicherte und gefundene Netze. Ist ein Chip frei, wird frisch gesucht.
+    Macht der einzige Chip gerade den Zugangspunkt, kann er nicht suchen —
+    dann kommt die Liste, die vor dem Start des Zugangspunkts gemerkt wurde.
+    """
     gespeichert = []
     ok, ausgabe = _nmcli("-t", "-f", "NAME,TYPE,AUTOCONNECT", "connection", "show")
     if ok:
         for zeile in ausgabe.splitlines():
-            teile = zeile.split(":")
-            if len(teile) >= 3 and "wireless" in teile[1]:
-                gespeichert.append({"name": teile[0], "auto": teile[2] == "yes"})
+            f = _felder(zeile)
+            if len(f) >= 3 and "wireless" in f[1] and f[0] != HOTSPOT:
+                gespeichert.append({"name": f[0], "auto": f[2] == "yes"})
 
-    gefunden = []
-    ok, ausgabe = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list",
-                         "--rescan", "yes", timeout=30)
-    if ok:
-        gesehen = set()
-        for zeile in ausgabe.splitlines():
-            teile = zeile.split(":")
-            if not teile or not teile[0] or teile[0] in gesehen:
-                continue
-            gesehen.add(teile[0])
-            gefunden.append({
-                "ssid": teile[0],
-                "signal": int(teile[1]) if len(teile) > 1 and teile[1].isdigit() else None,
-                "gesichert": bool(len(teile) > 2 and teile[2].strip()),
-            })
-        gefunden.sort(key=lambda n: -(n["signal"] or 0))
-    return {"gespeichert": gespeichert, "gefunden": gefunden, "lage": wlan_lage()}
+    lage = wlan_lage()
+    live, gefunden = False, []
+    if lage["live_suche"]:
+        ok, ausgabe = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list",
+                             "ifname", lage["client_geraet"], "--rescan", "yes", timeout=30)
+        if ok and ausgabe.strip():
+            live, gefunden = True, _netze_lesen(ausgabe)
+            _scan_merken(ausgabe)
+    stand = None
+    if not live:
+        try:
+            gefunden = _netze_lesen(WLAN_SCAN.read_text(encoding="utf-8"))
+            stand = int(time.time() - WLAN_SCAN.stat().st_mtime)
+        except OSError:
+            gefunden = []
+    return {"gespeichert": gespeichert, "gefunden": gefunden, "live": live,
+            "stand": stand, "lage": lage, "wechsel": wlan_wechsel_status()}
 
 
 def hotspot_lage() -> dict:
     """Laeuft der Notfall-Zugangspunkt gerade?"""
     ok, ausgabe = _nmcli("-t", "-f", "NAME", "connection", "show", "--active")
-    aktiv = ok and any(z.strip() == "hotspot" for z in ausgabe.splitlines())
+    aktiv = ok and any(_felder(z)[0] == HOTSPOT for z in ausgabe.splitlines())
     ok2, ausgabe2 = _nmcli("-t", "-f", "NAME", "connection", "show")
-    vorhanden = ok2 and any(z.strip() == "hotspot" for z in ausgabe2.splitlines())
+    vorhanden = ok2 and any(_felder(z)[0] == HOTSPOT for z in ausgabe2.splitlines())
     return {"vorhanden": vorhanden, "aktiv": aktiv}
 
 
 def hotspot_schalten(an: bool, port: int = 80) -> tuple[bool, str]:
+    anhang = "" if port == 80 else f":{port}"
     if an:
-        ok, ausgabe = _nmcli("connection", "up", "hotspot", mit_sudo=True, timeout=45)
-        anhang = "" if port == 80 else f":{port}"
-        return ok, (f"Zugangspunkt läuft — erreichbar unter http://10.42.0.1{anhang}"
+        ok, ausgabe = _wlan_skript("hotspot-an")
+        return ok, (f"Zugangspunkt wird gestartet — erreichbar unter http://10.42.0.1{anhang}"
                     if ok else ausgabe)
-    ok, ausgabe = _nmcli("connection", "down", "hotspot", mit_sudo=True, timeout=45)
-    return ok, ("Zugangspunkt beendet. Der Rechner sucht jetzt wieder nach "
-                "bekannten Netzen." if ok else ausgabe)
+    ok, ausgabe = _wlan_skript("hotspot-aus", timeout=45)
+    return ok, ("Zugangspunkt beendet." if ok else ausgabe)
 
 
-def wlan_speichern(ssid: str, passwort: str, sofort: bool) -> tuple[bool, str]:
+def wlan_speichern(ssid: str, passwort: str, versteckt: bool = False) -> tuple[bool, str]:
     """
-    Legt ein WLAN an. Standardmaessig wird es nur gespeichert und nicht sofort
-    aktiviert — ein Netzwechsel mitten im Betrieb wuerde die gerade offene
-    Verbindung zum Dashboard abreissen lassen.
+    Legt ein WLAN an oder erneuert das Kennwort eines vorhandenen. Aktiviert
+    wird es hier nicht — das erledigt wlan_verbinden mit Rueckfallnetz.
     """
     if not ssid:
         return False, "Ohne Netzwerknamen geht es nicht."
-    if sofort:
-        argumente = ["device", "wifi", "connect", ssid]
-        if passwort:
-            argumente += ["password", passwort]
-        ok, ausgabe = _nmcli(*argumente, mit_sudo=True, timeout=45)
-        return ok, ("Verbunden mit " + ssid) if ok else ausgabe
+    if ssid == HOTSPOT:
+        return False, "Dieser Name ist für den Zugangspunkt reserviert."
+    if passwort and not 8 <= len(passwort) <= 63:
+        return False, "Ein WLAN-Kennwort hat 8 bis 63 Zeichen."
+    ok, ausgabe = _nmcli("-t", "-f", "NAME", "connection", "show")
+    vorhanden = ok and any(_felder(z)[0] == ssid for z in ausgabe.splitlines())
+
+    sicherheit = (["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", passwort]
+                  if passwort else [])
+    if vorhanden:
+        # Ohne Kennwort bleibt die bisherige Absicherung stehen.
+        argumente = ["connection", "modify", ssid, "802-11-wireless.ssid", ssid,
+                     "802-11-wireless.hidden", "yes" if versteckt else "no"] + sicherheit
+        ok, ausgabe = _nmcli(*argumente, mit_sudo=True)
+        return ok, (f"{ssid} aktualisiert.") if ok else ausgabe
 
     argumente = ["connection", "add", "type", "wifi", "con-name", ssid,
-                 "ssid", ssid, "autoconnect", "yes"]
-    if passwort:
-        argumente += ["wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", passwort]
+                 "ssid", ssid, "autoconnect", "yes",
+                 "802-11-wireless.hidden", "yes" if versteckt else "no"] + sicherheit
     ok, ausgabe = _nmcli(*argumente, mit_sudo=True)
-    if not ok and "already exists" in ausgabe:
-        return False, f"Ein Eintrag namens {ssid} ist bereits vorhanden."
-    return ok, (f"{ssid} gespeichert — der Rechner verbindet sich, sobald das Netz "
-                "in Reichweite ist.") if ok else ausgabe
+    return ok, (f"{ssid} gespeichert.") if ok else ausgabe
+
+
+def wlan_verbinden(name: str, port: int = 80) -> tuple[bool, str]:
+    """Wechsel ueber wlan.sh — laeuft abgekoppelt und faellt bei Misserfolg zurueck."""
+    if not name:
+        return False, "Welches Netz?"
+    lage = wlan_lage()
+    ok, ausgabe = _wlan_skript("wechsel", name)
+    if not ok:
+        return False, ausgabe
+    rechner = socket.gethostname()
+    anhang = "" if port == 80 else f":{port}"
+    if lage["zwei_chips"] and lage["hotspot_geraet"]:
+        return True, (f"Verbinde mit {name} … der Zugangspunkt bleibt dabei an.")
+    if lage["hotspot_geraet"]:
+        return True, (f"Der Zugangspunkt geht jetzt aus. Klappt es, ist der Pegellotse im Netz "
+                      f"„{name}“ unter http://{rechner}.local{anhang} erreichbar. Klappt es "
+                      "nicht (etwa falsches Kennwort), ist der Zugangspunkt nach etwa einer "
+                      "Minute wieder da — unter Einstellungen → WLAN steht dann der Grund.")
+    return True, (f"Wechsel zu {name}. Diese Seite verliert kurz die Verbindung. Klappt es "
+                  f"nicht, kehrt der Rechner ins bisherige Netz zurück.")
+
+
+def wlan_suchen() -> tuple[bool, str]:
+    ok, ausgabe = _wlan_skript("suchen")
+    return ok, ("Der Zugangspunkt ist für etwa 15 Sekunden weg. Danach wieder mit "
+                "„Pegellotse“ verbinden und die Liste auffrischen." if ok else ausgabe)
 
 
 def wlan_entfernen(name: str) -> tuple[bool, str]:
+    if name == HOTSPOT:
+        return False, "Der Zugangspunkt wird nicht hier entfernt."
     ok, ausgabe = _nmcli("connection", "delete", name, mit_sudo=True)
     return ok, (f"{name} entfernt.") if ok else ausgabe
 
@@ -837,6 +979,7 @@ def build_app(monitor: Monitor) -> Flask:
             "temperatur": cpu_temperatur(),
             "drosselung": gedrosselt(),
             "wlan": wlan_lage() if LINUX else {"verfuegbar": False},
+            "wlan_wechsel": wlan_wechsel_status() if LINUX else None,
             "hotspot": hotspot_lage() if LINUX else {"vorhanden": False, "aktiv": False},
         })
 
@@ -849,10 +992,28 @@ def build_app(monitor: Monitor) -> Flask:
     @app.post("/api/wlan")
     def wlan_neu():
         data = request.get_json(force=True, silent=True) or {}
-        ok, text = wlan_speichern(str(data.get("ssid", "")).strip(),
-                                  str(data.get("passwort", "")),
-                                  bool(data.get("sofort")))
+        ssid = str(data.get("ssid", "")).strip()
+        ok, text = wlan_speichern(ssid, str(data.get("passwort", "")),
+                                  bool(data.get("versteckt")))
+        if ok and data.get("verbinden"):
+            ok, text2 = wlan_verbinden(ssid, monitor.port)
+            text = text + " " + text2
         return jsonify({"ok": ok, "text": text})
+
+    @app.post("/api/wlan/verbinden")
+    def wlan_wechsel():
+        data = request.get_json(force=True, silent=True) or {}
+        ok, text = wlan_verbinden(str(data.get("name", "")), monitor.port)
+        return jsonify({"ok": ok, "text": text})
+
+    @app.post("/api/wlan/suchen")
+    def wlan_neu_suchen():
+        ok, text = wlan_suchen()
+        return jsonify({"ok": ok, "text": text})
+
+    @app.get("/api/wlan/wechsel")
+    def wlan_wechsel_lage():
+        return jsonify({"wechsel": wlan_wechsel_status(), "lage": wlan_lage()})
 
     @app.post("/api/wlan/entfernen")
     def wlan_weg():

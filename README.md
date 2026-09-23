@@ -88,7 +88,7 @@ Einstellbar über Umgebungsvariablen:
 | `REPO` | andere Quelle auf GitHub, etwa ein Fork |
 | `PORT` | Port des Dashboards, Standard 80 |
 | `HOSTNAME_NEU` | Rechnernamen setzen |
-| `HOTSPOT=0` | Notfall-Zugangspunkt nicht einrichten |
+| `HOTSPOT=0` | Zugangspunkt nicht einrichten |
 | `HOTSPOT_SSID`, `HOTSPOT_PW` | Name und Kennwort des Zugangspunkts |
 | `LUEFTER_GPIO`, `LUEFTER_TEMP` | temperaturgesteuerter Lüfter |
 
@@ -201,17 +201,38 @@ Bildschirmzeitlimit des Geräts.
 
 ## Netz und Uhrzeit auf dem Pi
 
-**WLAN nachtragen.** Unter Einstellungen → WLAN lassen sich Netze suchen und
-hinzufügen. Neue Netze werden standardmäßig nur gespeichert, nicht sofort
-aktiviert — sonst wechselt der Pi mitten im Betrieb das Netz und reißt die
-gerade offene Verbindung ab.
+**WLAN nachtragen.** Unter Einstellungen → WLAN ein Netz aus der Liste wählen
+oder über „Anderes Netz von Hand eingeben …“ den Namen eintippen (auch für
+versteckte Netze), Kennwort dazu, „Speichern“. Mit „gleich verbinden“ wechselt
+der Pi sofort. Scheitert der Wechsel, etwa an einem Tippfehler im Kennwort,
+kehrt er von selbst dorthin zurück, wo er vorher war (bisheriges Netz oder
+Zugangspunkt). Den Grund zeigt danach der WLAN-Abschnitt an. Bereits
+gespeicherte Netze lassen sich dort auch direkt „verbinden“; ein erneutes
+Speichern unter demselben Namen ersetzt das Kennwort.
 
 **Wenn kein Netz da ist**, macht der Pi nach etwa anderthalb Minuten selbst
 ein WLAN auf (Standard: `Pegellotse` / `pegellotse`, Adresse
-`http://10.42.0.1`). Darüber lässt sich in Ruhe das richtige Netz
-eintragen. Zurück geht es nicht von allein: die WLAN-Chips im Pi können nicht
-gleichzeitig senden und nach fremden Netzen suchen. Also Zugangspunkt im
-Dashboard beenden oder neu starten.
+`http://10.42.0.1`). Darüber lässt sich in Ruhe das richtige Netz eintragen.
+
+**Ein oder zwei WLAN-Chips.** Der eingebaute Chip des Pi kann entweder
+Zugangspunkt sein oder in fremden Netzen suchen und sich einbuchen, nicht
+beides zugleich. Deshalb gilt:
+
+- *Nur der eingebaute Chip:* Kurz bevor der Zugangspunkt startet, sucht der Pi
+  noch einmal und merkt sich die Netze. Diese Liste zeigt das Dashboard samt
+  Alter an. Fehlt ein Netz, hilft die Eingabe von Hand oder „Neu suchen“:
+  Dann geht der Zugangspunkt etwa 15 Sekunden aus, danach das Tablet wieder
+  mit `Pegellotse` verbinden. Beim Wechsel in ein Netz verliert die Seite die
+  Verbindung; anschließend ist der Pi im neuen Netz unter
+  `http://pegellotse.local` erreichbar.
+- *Mit zusätzlichem USB-WLAN-Stick:* Wird ohne Einstellung erkannt, auch wenn
+  er erst im Betrieb eingesteckt wird. Ein Chip macht dann dauerhaft den
+  Zugangspunkt (bevorzugt der eingebaute), der andere sucht live und bucht
+  sich ein. Das Tablet bleibt die ganze Zeit mit `Pegellotse` verbunden, und
+  der Pi ist trotzdem im Veranstaltungsnetz. Geeignet ist praktisch jeder
+  Stick, den Raspberry Pi OS ohne Zusatztreiber erkennt (`nmcli device`
+  zeigt dann ein zweites `wifi`-Gerät). Wird der Zugangspunkt bewusst beendet,
+  bleibt er bis zum nächsten Neustart aus.
 
 **Uhrzeit.** Ein Pi hat keine batteriegepufferte Uhr. Das Dashboard vergleicht
 beim Öffnen die Uhr des Pi mit der des Endgeräts, das gerade daraufschaut, und
@@ -293,7 +314,8 @@ git push origin v1.0.1
 | `templates/dashboard.html` | die Oberfläche |
 | `selftest.py` | prüft die Messkette gegen Sollwerte |
 | `paket_bauen.py` | baut die portable Windows-Version |
-| `install.sh`, `hotspot.sh` | Einrichtung auf dem Raspberry Pi |
+| `install.sh` | Einrichtung auf dem Raspberry Pi |
+| `wlan.sh` | Zugangspunkt und Netzwechsel auf dem Pi (ein oder zwei WLAN-Chips) |
 
 Windows und Raspberry Pi teilen sich denselben Quelltext; getrennt sind nur
 die Dateien, die verpacken oder einrichten.
