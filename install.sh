@@ -138,9 +138,11 @@ Group=$BENUTZER
 SupplementaryGroups=audio
 WorkingDirectory=$ZIEL
 Environment=PEGELLOTSE_DATA=$DATEN
-# Erlaubt das Oeffnen von Port 80, ohne dass der Dienst root-Rechte braucht
+# Erlaubt das Oeffnen von Port 80, ohne dass der Dienst root-Rechte braucht.
+# CapabilityBoundingSet wird hier ausdruecklich NICHT eingeengt: sonst fehlen
+# CAP_SETUID/CAP_SETGID, und sudo scheitert mit "unable to change to root gid"
+# — der Dienst koennte dann weder die Uhr stellen noch das WLAN schalten.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 ExecStart=$ZIEL/venv/bin/python $ZIEL/pegellotse.py --port $PORT --kein-browser
 Restart=always
 RestartSec=5
