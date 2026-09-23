@@ -885,7 +885,8 @@ async function ladeSystem(){
     else if (wlanLage.verfuegbar)
       $("info-wlanlage").textContent = "Zurzeit mit keinem fremden WLAN verbunden.";
     $("info-chips").textContent = wlanLage.zwei_chips
-      ? "Zwei WLAN-Chips: einer macht den Zugangspunkt, der andere sucht und verbindet sich."
+      ? "Zwei WLAN-Chips: einer macht den Zugangspunkt, der andere sucht und verbindet sich. "
+        + "Gesucht wird auf allen Chips, die gerade keinen Zugangspunkt machen."
       : (wlanLage.chips === 1 && hs.aktiv
           ? "Ein WLAN-Chip: solange der Zugangspunkt läuft, kann er nicht suchen. " +
             "Die Liste stammt von kurz vor dem Start. Ein USB-WLAN-Stick hebt das auf."
@@ -904,10 +905,12 @@ function zeigeWechsel(w){
   const el = $("info-wechsel");
   if (!w || w.vor > 900){ el.hidden = true; return; }
   el.hidden = false;
-  el.className = "info " + (w.zustand === "ok" ? "gut" : w.zustand === "fehler" ? "schlecht" : "");
+  el.className = "info " + (w.zustand === "ok" ? "gut" : w.zustand === "laeuft" ? "" : "schlecht");
   const wann = w.vor < 90 ? "gerade eben" : "vor " + Math.round(w.vor / 60) + " min";
-  el.textContent = (w.zustand === "laeuft" ? "Netzwechsel läuft: " : "Letzter Netzwechsel (" + wann + "): ")
-                   + w.text;
+  const kopf = w.zustand === "laeuft" ? "Netzwechsel läuft: "
+             : w.zustand === "hinweis" ? "Hinweis (" + wann + "): "
+             : "Letzter Netzwechsel (" + wann + "): ";
+  el.textContent = kopf + w.text;
 }
 
 // Nach einem Wechsel nachsehen, wie es ausging — solange die Seite noch

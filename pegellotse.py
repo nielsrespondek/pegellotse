@@ -297,10 +297,14 @@ def wlan_lage() -> dict:
     ap = next((g for g in geraete if g["verbindung"] == HOTSPOT), None)
     lage["hotspot_geraet"] = ap["geraet"] if ap else None
     andere = [g for g in geraete if g is not ap]
+    # Gesucht wird auf allen Chips, die nicht gerade den Zugangspunkt machen.
+    # Ein freier Chip sieht deutlich mehr als einer, der gerade in einem Netz
+    # haengt — der bringt oft nur sein eigenes Netz zurueck.
+    lage["such_geraete"] = [g["geraet"] for g in andere]
+    lage["live_suche"] = bool(andere)
     client = next((g for g in andere if g["verbindung"]), None) or (andere[0] if andere else None)
     if client:
         lage["client_geraet"] = client["geraet"]
-        lage["live_suche"] = True          # dieser Chip ist frei zum Suchen
         if client["verbindung"]:
             lage["verbunden"] = client["verbindung"]
             ok, ausgabe = _nmcli("-t", "-f", "ACTIVE,SIGNAL", "device", "wifi", "list",
@@ -315,19 +319,23 @@ def wlan_lage() -> dict:
 
 
 def _netze_lesen(ausgabe: str) -> list[dict]:
-    gefunden, gesehen = [], set()
+    # Mehrere Chips sehen dasselbe Netz unterschiedlich stark, und ein Netz mit
+    # mehreren Zugangspunkten steht ohnehin mehrfach in der Liste. Es zaehlt
+    # jeweils das staerkste.
+    beste: dict[str, dict] = {}
     for zeile in ausgabe.splitlines():
         f = _felder(zeile)
-        if not f or not f[0] or f[0] in gesehen:
+        if not f or not f[0] or f[0] == "--":
             continue
-        gesehen.add(f[0])
-        gefunden.append({
+        netz = {
             "ssid": f[0],
             "signal": int(f[1]) if len(f) > 1 and f[1].isdigit() else None,
             "gesichert": bool(len(f) > 2 and f[2].strip() not in ("", "--")),
-        })
-    gefunden.sort(key=lambda n: -(n["signal"] or 0))
-    return gefunden
+        }
+        alt = beste.get(f[0])
+        if alt is None or (netz["signal"] or 0) > (alt["signal"] or 0):
+            beste[f[0]] = netz
+    return sorted(beste.values(), key=lambda n: -(n["signal"] or 0))
 
 
 def _scan_merken(ausgabe: str) -> None:
@@ -363,13 +371,16 @@ def wlan_netze() -> dict:
                 gespeichert.append({"name": f[0], "auto": f[2] == "yes"})
 
     lage = wlan_lage()
-    live, gefunden = False, []
-    if lage["live_suche"]:
+    live, gefunden, roh = False, [], []
+    for geraet in lage.get("such_geraete", []):
         ok, ausgabe = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list",
-                             "ifname", lage["client_geraet"], "--rescan", "yes", timeout=30)
+                             "ifname", geraet, "--rescan", "yes", timeout=30)
         if ok and ausgabe.strip():
-            live, gefunden = True, _netze_lesen(ausgabe)
-            _scan_merken(ausgabe)
+            roh.append(ausgabe)
+    if roh:
+        zusammen = "\n".join(roh)
+        live, gefunden = True, _netze_lesen(zusammen)
+        _scan_merken(zusammen)
     stand = None
     if not live:
         try:

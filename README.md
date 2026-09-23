@@ -227,8 +227,16 @@ beides zugleich. Deshalb gilt:
   `http://pegellotse.local` erreichbar.
 - *Mit zusätzlichem USB-WLAN-Stick:* Wird ohne Einstellung erkannt, auch wenn
   er erst im Betrieb eingesteckt wird. Ein Chip macht dann dauerhaft den
-  Zugangspunkt (bevorzugt der eingebaute), der andere sucht live und bucht
-  sich ein. Das Tablet bleibt die ganze Zeit mit `Pegellotse` verbunden, und
+  Zugangspunkt, der andere sucht und bucht sich ein. Den Zugangspunkt
+  übernimmt der Chip, der es kann: Viele Sticks beherrschen nur den
+  Client-Betrieb (`nmcli -g WIFI-PROPERTIES.AP device show wlan1` sagt
+  `no`). Hängt dann der eingebaute Chip in einem Netz, zieht diese
+  Verbindung auf den Stick um, damit der eingebaute frei wird. Klappt der
+  Umzug nicht, bleibt die bestehende Verbindung unangetastet und das
+  Dashboard sagt, warum kein Zugangspunkt läuft. Gesucht wird immer auf
+  allen Chips, die gerade keinen Zugangspunkt machen, und die Ergebnisse
+  werden zusammengelegt — ein Chip, der schon in einem Netz hängt, findet
+  oft nur dieses eine. Das Tablet bleibt die ganze Zeit mit `Pegellotse` verbunden, und
   der Pi ist trotzdem im Veranstaltungsnetz. Geeignet ist praktisch jeder
   Stick, den Raspberry Pi OS ohne Zusatztreiber erkennt (`nmcli device`
   zeigt dann ein zweites `wifi`-Gerät). Wird der Zugangspunkt bewusst beendet,
