@@ -862,6 +862,11 @@ async function ladeSystem(){
       if (jetzt.length) text += "<br><b>Jetzt: " + jetzt.join(", ") + "</b> — das kann Aussetzer verursachen.";
       else if (frueher.length) text += "<br>Seit dem Einschalten aufgetreten: " + frueher.join(", ") + ".";
     }
+    if (d.uhr_drift)
+      text += "<br><b>Die Systemuhr wurde um " + Math.round(d.uhr_drift) + " s verstellt, "
+            + "seit die Aufzeichnung läuft.</b> Die Zeitstempel im laufenden Protokoll "
+            + "folgen weiter der alten Uhr — ein Sprung mitten in der Datei wäre schlimmer. "
+            + "Das nächste Protokoll startet wieder richtig.";
     $("info-system").innerHTML = text;
     $("gruppe-wlan").hidden = !(d.linux && d.wlan && d.wlan.verfuegbar);
     systemPort = d.port;

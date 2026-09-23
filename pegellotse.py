@@ -516,6 +516,7 @@ class Monitor:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.lock = threading.Lock()
+        self.uhr_drift = 0.0      # Systemuhr gegen Messkern-Uhr, siehe _uhr_pruefen
         self.q: queue.Queue = queue.Queue(maxsize=64)
         self.stream = None
         self.device_label = ""
@@ -641,6 +642,12 @@ class Monitor:
         self.csv_name = ""
 
     def _open_log(self) -> None:
+        # Vor dem ersten Zeitstempel die Uhr des Messkerns nachziehen. Sonst
+        # traegt das Protokoll die Uhrzeit von vor einem zwischenzeitlichen
+        # Zeitabgleich — der Dateiname kaeme von der richtigen Uhr, die Zeilen
+        # darin von der alten.
+        self.engine.stelle_uhr()
+        self.uhr_drift = 0.0
         LOG_DIR.mkdir(exist_ok=True)
         stem = datetime.now().strftime("%Y-%m-%d_%H-%M")
         if self.cfg["veranstaltung"]:
@@ -761,6 +768,7 @@ class Monitor:
         Veranstaltung unbemerkt, wenn gerade niemand aufs Dashboard schaut.
         """
         while not self._stop.wait(5.0):
+            self._uhr_pruefen()
             jetzt = time.monotonic()
             steht = self.stream is None or (self.letzter_block > 0
                                             and jetzt - self.letzter_block > 5.0)
@@ -780,6 +788,29 @@ class Monitor:
             else:
                 self.wache_meldung = (f"Aufnahme laesst sich nicht starten: "
                                       f"{self.fehler}")
+
+    def _uhr_pruefen(self) -> None:
+        """
+        Die Systemuhr kann sich ohne Zutun aendern: Der Pi hat keine
+        batteriegepufferte Uhr und stellt sie per Zeitserver, sobald er ins
+        Netz kommt. Der Messkern rechnet mit einer monotonen Uhr und einem
+        festen Versatz zur Systemzeit — der muss dann nachgezogen werden.
+        Waehrend einer laufenden Aufzeichnung geschieht das nicht: ein Sprung
+        mitten in der Datei waere schlimmer als ein durchgehender Versatz.
+        Stattdessen wird er gemeldet.
+        """
+        drift = time.time() - self.engine.wanduhr()
+        if abs(drift) < 2.0:
+            if self.uhr_drift:
+                self.uhr_drift = 0.0
+            return
+        if self.cfg["log_enabled"]:
+            self.uhr_drift = drift
+            return
+        print(f"Systemuhr hat sich um {drift:.0f} s verschoben — Messkern nachgezogen")
+        with self.lock:
+            self.engine.stelle_uhr()
+        self.uhr_drift = 0.0
 
     # -- Markierungen ------------------------------------------------------
     def markieren(self, text: str) -> tuple[bool, str]:
@@ -991,6 +1022,7 @@ def build_app(monitor: Monitor) -> Flask:
             "drosselung": gedrosselt(),
             "wlan": wlan_lage() if LINUX else {"verfuegbar": False},
             "wlan_wechsel": wlan_wechsel_status() if LINUX else None,
+            "uhr_drift": round(monitor.uhr_drift, 1),
             "hotspot": hotspot_lage() if LINUX else {"vorhanden": False, "aktiv": False},
         })
 

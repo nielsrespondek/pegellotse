@@ -247,6 +247,14 @@ beim Öffnen die Uhr des Pi mit der des Endgeräts, das gerade daraufschaut, und
 bietet an, sie zu übernehmen. Während einer laufenden Aufzeichnung wird die
 Uhr nicht gestellt.
 
+Stellt sich die Systemuhr von selbst (der Pi holt sich die Zeit vom
+Zeitserver, sobald er ins Netz kommt), zieht der Messkern nach, sobald kein
+Protokoll läuft. Beim Start einer Aufzeichnung wird die Uhr ohnehin
+abgeglichen, damit Dateiname und Zeitstempel zusammenpassen. Springt die Uhr
+mitten in einer laufenden Aufzeichnung, bleiben die Zeitstempel bewusst bei
+der alten Uhr — ein Sprung mitten in der Datei wäre schlimmer — und das
+Dashboard weist darauf hin.
+
 Den Messwerten kann eine springende Uhr nichts anhaben: die gleitenden
 Mittelungen laufen über eine monotone Uhr, die Systemzeit dient nur für
 Anzeige, Protokoll und die Lage der halbstündigen Blöcke.
